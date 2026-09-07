@@ -1,29 +1,108 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
+import { type INestApplication } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { App } from 'supertest/types';
+import type { App } from 'supertest/types';
+import { z } from 'zod';
 import { AppModule } from './../src/app.module.js';
+import { configureApplication } from './../src/app.setup.js';
+import { ApiErrorResponseSchema } from './../src/common/contracts/api-response.schema.js';
+import type { EnvironmentVariables } from './../src/config/environment.schema.js';
+import { HealthResponseSchema } from './../src/modules/health/health.contract.js';
+import {
+  GetReadingProductResponseSchema,
+  GetReadingProductsResponseSchema,
+} from './../src/modules/reading-products/reading-product.contract.js';
 
-describe('AppController (e2e)', () => {
+const OpenApiDocumentSchema = z.object({
+  openapi: z.string(),
+  paths: z.object({
+    '/health': z.unknown(),
+    '/v1/reading-products': z.unknown(),
+    '/v1/reading-products/{productCode}': z.unknown(),
+  }),
+});
+
+describe('Application (e2e)', () => {
   let app: INestApplication<App>;
 
-  beforeEach(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
+  beforeAll(async () => {
+    const moduleFixture = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    const configService =
+      app.get<ConfigService<EnvironmentVariables, true>>(ConfigService);
+    configureApplication(app, configService);
     await app.init();
   });
 
-  it('/ (GET)', () => {
-    return request(app.getHttpServer())
-      .get('/')
-      .expect(200)
-      .expect('Hello World!');
+  it('GET /health returns the standard response envelope', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/health')
+      .expect(200);
+    const body = HealthResponseSchema.parse(response.body);
+
+    expect(body.code).toBe(200);
+    expect(body.message).toBe('서비스가 정상적으로 동작 중입니다.');
+    expect(body.data.status).toBe('ok');
+    expect(response.headers['x-request-id']).toEqual(expect.any(String));
   });
 
-  afterEach(async () => {
+  it('GET /v1/reading-products returns the server catalog', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/v1/reading-products')
+      .expect(200);
+    const body = GetReadingProductsResponseSchema.parse(response.body);
+
+    expect(body.code).toBe(200);
+    expect(body.message).toBe('풀이 상품 목록을 조회했습니다.');
+    expect(body.data.products).toHaveLength(13);
+  });
+
+  it('GET /v1/reading-products/:code returns one product', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/v1/reading-products/past-life-relationship')
+      .expect(200);
+    const body = GetReadingProductResponseSchema.parse(response.body);
+
+    expect(body.data.product).toMatchObject({
+      code: 'past-life-relationship',
+      availability: 'active',
+    });
+  });
+
+  it('returns the standard error envelope for an unknown product', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/v1/reading-products/unknown-product')
+      .expect(404);
+    const body = ApiErrorResponseSchema.parse(response.body);
+
+    expect(body.code).toBe(404);
+    expect(body.data?.reason).toBe('READING_PRODUCT_NOT_FOUND');
+  });
+
+  it('validates path parameters with Zod', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/v1/reading-products/INVALID_CODE')
+      .expect(400);
+    const body = ApiErrorResponseSchema.parse(response.body);
+
+    expect(body.code).toBe(400);
+    expect(body.data?.reason).toBe('VALIDATION_ERROR');
+    expect(body.data?.fieldErrors?.productCode).toBeDefined();
+  });
+
+  it('serves the OpenAPI contract', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/openapi.json')
+      .expect(200);
+
+    OpenApiDocumentSchema.parse(response.body);
+  });
+
+  afterAll(async () => {
     await app.close();
   });
 });
