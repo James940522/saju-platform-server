@@ -20,7 +20,7 @@ export function configureApplication(
   app.enableCors({
     credentials: true,
     exposedHeaders: [REQUEST_ID_HEADER],
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     origin: configService.get('CORS_ORIGINS', { infer: true }),
   });
   app.enableVersioning({ type: VersioningType.URI });

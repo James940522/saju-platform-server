@@ -50,19 +50,23 @@ export const ReadingResultTypeSchema = z
   .enum(['standard', 'daily_fortune', 'past_life_relationship', 'ranking'])
   .meta({ id: 'ReadingResultType' });
 
-export const ReadingProductSchema = z
+export const ReadingProductSummarySchema = z
   .strictObject({
     id: z.string().min(1),
     code: ReadingProductCodeSchema,
     title: z.string().min(1),
     description: z.string().min(1),
     theme: ReadingThemeSchema,
-    subjectRequirement: ReadingSubjectRequirementSchema,
     availability: ReadingAvailabilitySchema,
     pricing: ReadingPricingSchema,
-    resultType: ReadingResultTypeSchema,
-    highlights: z.array(z.string().min(1)).min(1),
   })
+  .meta({ id: 'ReadingProductSummary' });
+
+export const ReadingProductSchema = ReadingProductSummarySchema.extend({
+  subjectRequirement: ReadingSubjectRequirementSchema,
+  resultType: ReadingResultTypeSchema,
+  highlights: z.array(z.string().min(1)).min(1),
+})
   .meta({ id: 'ReadingProduct' });
 
 export const ReadingProductParamsSchema = z.strictObject({
@@ -71,7 +75,7 @@ export const ReadingProductParamsSchema = z.strictObject({
 
 export const GetReadingProductsDataSchema = z
   .strictObject({
-    products: z.array(ReadingProductSchema),
+    products: z.array(ReadingProductSummarySchema),
   })
   .meta({ id: 'GetReadingProductsData' });
 
@@ -94,6 +98,9 @@ export const GetReadingProductResponseSchema = createApiResponseSchema(
 );
 
 export type ReadingProduct = z.output<typeof ReadingProductSchema>;
+export type ReadingProductSummary = z.output<
+  typeof ReadingProductSummarySchema
+>;
 export type ReadingProductParams = z.output<typeof ReadingProductParamsSchema>;
 export type GetReadingProductsData = z.output<
   typeof GetReadingProductsDataSchema

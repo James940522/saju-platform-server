@@ -20,6 +20,8 @@ const OpenApiDocumentSchema = z.object({
     '/health': z.unknown(),
     '/v1/reading-products': z.unknown(),
     '/v1/reading-products/{productCode}': z.unknown(),
+    '/v1/users/me': z.unknown(),
+    '/v1/users/me/registration': z.unknown(),
   }),
 });
 
@@ -58,7 +60,17 @@ describe('Application (e2e)', () => {
 
     expect(body.code).toBe(200);
     expect(body.message).toBe('풀이 상품 목록을 조회했습니다.');
-    expect(body.data.products).toHaveLength(13);
+    expect(body.data.products.map((product) => product.code)).toEqual([
+      'wealth-ranking',
+      'past-life-relationship',
+      'detailed-saju',
+      'daily-fortune',
+      'monthly-fortune',
+      'three-month-fortune',
+    ]);
+    expect(body.data.products[0]).not.toHaveProperty('subjectRequirement');
+    expect(body.data.products[0]).not.toHaveProperty('resultType');
+    expect(body.data.products[0]).not.toHaveProperty('highlights');
   });
 
   it('GET /v1/reading-products/:code returns one product', async () => {
@@ -70,6 +82,7 @@ describe('Application (e2e)', () => {
     expect(body.data.product).toMatchObject({
       code: 'past-life-relationship',
       availability: 'active',
+      subjectRequirement: { type: 'pair' },
     });
   });
 
@@ -80,6 +93,15 @@ describe('Application (e2e)', () => {
     const body = ApiErrorResponseSchema.parse(response.body);
 
     expect(body.code).toBe(404);
+    expect(body.data?.reason).toBe('READING_PRODUCT_NOT_FOUND');
+  });
+
+  it('does not expose a hidden product', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/v1/reading-products/love-fortune')
+      .expect(404);
+    const body = ApiErrorResponseSchema.parse(response.body);
+
     expect(body.data?.reason).toBe('READING_PRODUCT_NOT_FOUND');
   });
 
@@ -100,6 +122,15 @@ describe('Application (e2e)', () => {
       .expect(200);
 
     OpenApiDocumentSchema.parse(response.body);
+  });
+
+  it('requires a Supabase access token for the current user API', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/v1/users/me')
+      .expect(401);
+    const body = ApiErrorResponseSchema.parse(response.body);
+
+    expect(body.data?.reason).toBe('AUTHENTICATION_REQUIRED');
   });
 
   afterAll(async () => {

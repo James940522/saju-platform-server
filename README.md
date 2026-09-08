@@ -21,17 +21,21 @@ cp .env.example .env
 npm run start:dev
 ```
 
-기본 로컬 주소는 `http://localhost:3001`이다.
+기본 로컬 주소는 `http://localhost:8080`이다.
 
 ## Environment Variables
 
 | Name | Default | Description |
 | --- | --- | --- |
 | `NODE_ENV` | `development` | 실행 환경 |
-| `PORT` | `3001` | HTTP server port |
+| `PORT` | `8080` | HTTP server port |
 | `CORS_ORIGINS` | `http://localhost:3000` | 쉼표로 구분한 허용 frontend origin |
+| `DATABASE_URL` | - | 애플리케이션 runtime용 Supabase PostgreSQL pooled URL |
+| `DIRECT_URL` | - | Prisma migration용 Supabase PostgreSQL direct URL |
+| `SUPABASE_URL` | - | Supabase project URL |
+| `SUPABASE_PUBLISHABLE_KEY` | - | access token 검증 요청에 사용할 publishable key |
 
-현재 API가 DB를 사용하지 않으므로 Supabase 연결 환경변수는 아직 요구하지 않는다. Prisma schema를 추가하는 단계에서 runtime connection과 migration용 direct connection을 구분해 추가한다.
+`DIRECT_URL`은 migration에만 사용하고, 실행 중인 API는 connection pooler가 적용된 `DATABASE_URL`을 사용한다. 실제 credential과 key는 `.env`에만 두고 commit하지 않는다.
 
 ## API
 
@@ -40,6 +44,8 @@ npm run start:dev
 | `GET` | `/health` | 서비스 상태 확인 |
 | `GET` | `/v1/reading-products` | 풀이 상품 목록 |
 | `GET` | `/v1/reading-products/:productCode` | 풀이 상품 상세 |
+| `PUT` | `/v1/users/me` | Supabase 인증 주체의 앱 User 생성 또는 조회 |
+| `GET` | `/v1/users/me` | 현재 앱 User 조회 |
 | `GET` | `/docs` | Swagger UI |
 | `GET` | `/openapi.json` | OpenAPI 3.1 JSON |
 

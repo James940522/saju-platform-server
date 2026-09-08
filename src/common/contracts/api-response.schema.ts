@@ -46,3 +46,4 @@ export type ApiResponse<TData> = {
 };
 
 export type ApiErrorData = z.output<typeof ApiErrorDataSchema>;
+export type ApiErrorResponse = z.output<typeof ApiErrorResponseSchema>;

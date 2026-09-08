@@ -9,6 +9,10 @@ import {
   GetReadingProductsResponseSchema,
   ReadingProductCodeSchema,
 } from './modules/reading-products/reading-product.contract.js';
+import {
+  CompleteRegistrationRequestSchema,
+  CurrentUserResponseSchema,
+} from './modules/users/user.contract.js';
 
 const BadRequestResponseSchema = createApiErrorResponseSchema(
   'BadRequestResponse',
@@ -17,6 +21,14 @@ const BadRequestResponseSchema = createApiErrorResponseSchema(
 const NotFoundResponseSchema = createApiErrorResponseSchema(
   'NotFoundResponse',
   404,
+);
+const UnauthorizedResponseSchema = createApiErrorResponseSchema(
+  'UnauthorizedResponse',
+  401,
+);
+const ServiceUnavailableResponseSchema = createApiErrorResponseSchema(
+  'ServiceUnavailableResponse',
+  503,
 );
 
 const generatedOpenApiDocument = createDocument({
@@ -29,7 +41,17 @@ const generatedOpenApiDocument = createDocument({
   tags: [
     { name: 'System', description: '서비스 상태 확인' },
     { name: 'Reading Products', description: '풀이 상품 카탈로그' },
+    { name: 'Users', description: '인증된 사용자' },
   ],
+  components: {
+    securitySchemes: {
+      supabaseBearer: {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+      },
+    },
+  },
   paths: {
     '/health': {
       get: {
@@ -90,6 +112,106 @@ const generatedOpenApiDocument = createDocument({
           },
           404: {
             description: '상품을 찾을 수 없음',
+            content: {
+              'application/json': { schema: NotFoundResponseSchema },
+            },
+          },
+        },
+      },
+    },
+    '/v1/users/me': {
+      get: {
+        operationId: 'getCurrentUser',
+        summary: '현재 사용자 조회',
+        tags: ['Users'],
+        security: [{ supabaseBearer: [] }],
+        responses: {
+          200: {
+            description: '현재 사용자',
+            content: {
+              'application/json': { schema: CurrentUserResponseSchema },
+            },
+          },
+          401: {
+            description: '유효한 인증 토큰이 없음',
+            content: {
+              'application/json': { schema: UnauthorizedResponseSchema },
+            },
+          },
+          404: {
+            description: '앱 사용자 정보가 아직 없음',
+            content: {
+              'application/json': { schema: NotFoundResponseSchema },
+            },
+          },
+          503: {
+            description: '인증 공급자 연결 실패',
+            content: {
+              'application/json': { schema: ServiceUnavailableResponseSchema },
+            },
+          },
+        },
+      },
+      put: {
+        operationId: 'ensureCurrentUser',
+        summary: '현재 사용자 생성 또는 조회',
+        tags: ['Users'],
+        security: [{ supabaseBearer: [] }],
+        responses: {
+          200: {
+            description: '생성 또는 조회한 현재 사용자',
+            content: {
+              'application/json': { schema: CurrentUserResponseSchema },
+            },
+          },
+          401: {
+            description: '유효한 인증 토큰이 없음',
+            content: {
+              'application/json': { schema: UnauthorizedResponseSchema },
+            },
+          },
+          503: {
+            description: '인증 공급자 연결 실패',
+            content: {
+              'application/json': { schema: ServiceUnavailableResponseSchema },
+            },
+          },
+        },
+      },
+    },
+    '/v1/users/me/registration': {
+      put: {
+        operationId: 'completeCurrentUserRegistration',
+        summary: '현재 사용자 가입 확인 완료',
+        tags: ['Users'],
+        security: [{ supabaseBearer: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: CompleteRegistrationRequestSchema },
+          },
+        },
+        responses: {
+          200: {
+            description: '가입 확인을 완료한 현재 사용자',
+            content: {
+              'application/json': { schema: CurrentUserResponseSchema },
+            },
+          },
+          400: {
+            description: '필수 동의 또는 연령 확인 누락',
+            content: {
+              'application/json': { schema: BadRequestResponseSchema },
+            },
+          },
+          401: {
+            description: '유효한 인증 토큰이 없음',
+            content: {
+              'application/json': { schema: UnauthorizedResponseSchema },
+            },
+          },
+          404: {
+            description: '앱 사용자 정보가 아직 없음',
             content: {
               'application/json': { schema: NotFoundResponseSchema },
             },

@@ -1,0 +1,51 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserStatus {
+  PENDING_REGISTRATION @map("pending_registration")
+  ACTIVE               @map("active")
+  SUSPENDED            @map("suspended")
+  WITHDRAWN            @map("withdrawn")
+
+  @@map("user_status")
+}
+
+enum UserConsentType {
+  TERMS_OF_SERVICE @map("terms_of_service")
+  PRIVACY_POLICY   @map("privacy_policy")
+  AGE_REQUIREMENT  @map("age_requirement")
+
+  @@map("user_consent_type")
+}
+
+model User {
+  id          String        @id @default(uuid()) @db.Uuid
+  authSubject String        @unique @map("auth_subject") @db.Uuid
+  displayName String?       @map("display_name") @db.VarChar(50)
+  status      UserStatus    @default(PENDING_REGISTRATION)
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  withdrawnAt DateTime?     @map("withdrawn_at") @db.Timestamptz(3)
+  consents    UserConsent[]
+
+  @@map("users")
+}
+
+model UserConsent {
+  id         String          @id @default(uuid()) @db.Uuid
+  userId     String          @map("user_id") @db.Uuid
+  type       UserConsentType
+  version    String          @db.VarChar(50)
+  acceptedAt DateTime        @default(now()) @map("accepted_at") @db.Timestamptz(3)
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type, version])
+  @@index([userId])
+  @@map("user_consents")
+}

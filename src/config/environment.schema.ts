@@ -4,7 +4,7 @@ export const EnvironmentSchema = z.object({
   NODE_ENV: z
     .enum(['development', 'test', 'production'])
     .default('development'),
-  PORT: z.coerce.number().int().min(1).max(65_535).default(3001),
+  PORT: z.coerce.number().int().min(1).max(65_535).default(8080),
   CORS_ORIGINS: z
     .string()
     .default('http://localhost:3000')
@@ -15,6 +15,10 @@ export const EnvironmentSchema = z.object({
         .filter(Boolean),
     )
     .pipe(z.array(z.string().url()).min(1)),
+  DATABASE_URL: z.string().url(),
+  DIRECT_URL: z.string().url(),
+  SUPABASE_URL: z.string().url(),
+  SUPABASE_PUBLISHABLE_KEY: z.string().trim().min(1),
 });
 
 export type EnvironmentVariables = z.output<typeof EnvironmentSchema>;
