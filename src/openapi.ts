@@ -26,6 +26,10 @@ const UnauthorizedResponseSchema = createApiErrorResponseSchema(
   'UnauthorizedResponse',
   401,
 );
+const ForbiddenResponseSchema = createApiErrorResponseSchema(
+  'ForbiddenResponse',
+  403,
+);
 const ServiceUnavailableResponseSchema = createApiErrorResponseSchema(
   'ServiceUnavailableResponse',
   503,
@@ -152,32 +156,6 @@ const generatedOpenApiDocument = createDocument({
           },
         },
       },
-      put: {
-        operationId: 'ensureCurrentUser',
-        summary: '현재 사용자 생성 또는 조회',
-        tags: ['Users'],
-        security: [{ supabaseBearer: [] }],
-        responses: {
-          200: {
-            description: '생성 또는 조회한 현재 사용자',
-            content: {
-              'application/json': { schema: CurrentUserResponseSchema },
-            },
-          },
-          401: {
-            description: '유효한 인증 토큰이 없음',
-            content: {
-              'application/json': { schema: UnauthorizedResponseSchema },
-            },
-          },
-          503: {
-            description: '인증 공급자 연결 실패',
-            content: {
-              'application/json': { schema: ServiceUnavailableResponseSchema },
-            },
-          },
-        },
-      },
     },
     '/v1/users/me/registration': {
       put: {
@@ -210,10 +188,10 @@ const generatedOpenApiDocument = createDocument({
               'application/json': { schema: UnauthorizedResponseSchema },
             },
           },
-          404: {
-            description: '앱 사용자 정보가 아직 없음',
+          403: {
+            description: '현재 사용자 상태에서 가입할 수 없음',
             content: {
-              'application/json': { schema: NotFoundResponseSchema },
+              'application/json': { schema: ForbiddenResponseSchema },
             },
           },
         },

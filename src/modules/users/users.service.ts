@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service.js';
 import {
   UserStatus as PrismaUserStatus,
@@ -27,19 +31,6 @@ const USER_STATUS_BY_PRISMA_STATUS: Record<PrismaUserStatus, UserStatus> = {
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async ensureCurrentUser(
-    authSubject: string,
-    displayName: string | null,
-  ): Promise<CurrentUserData> {
-    const user = await this.prisma.user.upsert({
-      where: { authSubject },
-      create: { authSubject, displayName },
-      update: {},
-    });
-
-    return { user: this.toAppUser(user) };
-  }
-
   async getCurrentUser(authSubject: string): Promise<CurrentUserData> {
     const user = await this.prisma.user.findUnique({
       where: { authSubject },
@@ -57,15 +48,28 @@ export class UsersService {
 
   async completeRegistration(
     authSubject: string,
+    displayName: string | null,
     _request: CompleteRegistrationRequest,
   ): Promise<CurrentUserData> {
     const user = await this.prisma.$transaction(async (transaction) => {
-      const currentUser = await transaction.user.findUnique({
+      const currentUser = await transaction.user.upsert({
         where: { authSubject },
+        create: { authSubject, displayName },
+        update: {},
       });
 
-      if (!currentUser) {
-        throw this.createUserNotFoundException();
+      if (
+        currentUser.status === PrismaUserStatus.SUSPENDED ||
+        currentUser.status === PrismaUserStatus.WITHDRAWN
+      ) {
+        throw new ForbiddenException({
+          message: '현재 상태에서는 가입을 완료할 수 없습니다.',
+          reason: 'USER_REGISTRATION_NOT_ALLOWED',
+        });
+      }
+
+      if (currentUser.status === PrismaUserStatus.ACTIVE) {
+        return currentUser;
       }
 
       await transaction.userConsent.createMany({
@@ -107,12 +111,5 @@ export class UsersService {
       updatedAt: user.updatedAt.toISOString(),
       withdrawnAt: user.withdrawnAt?.toISOString() ?? null,
     };
-  }
-
-  private createUserNotFoundException() {
-    return new NotFoundException({
-      message: '사용자 정보를 찾을 수 없습니다.',
-      reason: 'USER_NOT_FOUND',
-    });
   }
 }

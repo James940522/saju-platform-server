@@ -17,20 +17,6 @@ import { UsersService } from './users.service.js';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  @Put()
-  @ResponseContract({
-    message: '사용자 정보를 준비했습니다.',
-    schema: CurrentUserDataSchema,
-  })
-  ensureCurrentUser(
-    @CurrentAuthPrincipal() principal: AuthPrincipal,
-  ): Promise<CurrentUserData> {
-    return this.usersService.ensureCurrentUser(
-      principal.subject,
-      principal.displayName,
-    );
-  }
-
   @Get()
   @ResponseContract({
     message: '사용자 정보를 조회했습니다.',
@@ -52,6 +38,10 @@ export class UsersController {
     @Body(new ZodValidationPipe(CompleteRegistrationRequestSchema))
     request: CompleteRegistrationRequest,
   ): Promise<CurrentUserData> {
-    return this.usersService.completeRegistration(principal.subject, request);
+    return this.usersService.completeRegistration(
+      principal.subject,
+      principal.displayName,
+      request,
+    );
   }
 }
