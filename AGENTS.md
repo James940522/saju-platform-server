@@ -5,7 +5,8 @@
 ## Project Status
 
 - 이 repository는 한국 사주/운세 기반 서비스의 Backend API다.
-- Frontend는 별도 repository인 `saju-platform`에서 관리한다.
+- 이 repository가 API 계약, 비즈니스 규칙, 데이터 무결성, 보안 경계의 source of truth다.
+- 현재 주요 API consumer인 Frontend는 별도 repository `saju-platform`에서 관리하지만, Frontend의 화면 구조나 구현 방식이 Backend 구조를 결정하지 않는다.
 - 현재 단계는 Backend Foundation 및 API Contract 설계 단계다.
 - 서비스명은 확정되지 않았으므로 코드, 변수, 디렉터리, 문서에 특정 브랜드명을 강하게 결합하지 않는다.
 - 필요한 기능을 얇은 vertical slice로 구현하고, 사용되지 않는 module이나 abstraction을 미리 만들지 않는다.
@@ -16,22 +17,28 @@
 
 1. `AGENTS.md`
 2. 현재 작업과 관련된 server code와 test
-3. API 소비자인 sibling frontend repository의 관련 entity, feature, domain code
+3. 작업에 영향을 받는 server configuration, Prisma schema/migration, OpenAPI schema
 4. 만세력 작업이라면 `../saju-platform/docs/manseoryeok_contract.md`
-5. 제품 또는 전체 구조 판단이 필요하다면 `../saju-platform/docs/product_context.md`와 `../saju-platform/docs/architecture.md`
+5. 제품 요구사항이나 전체 시스템 판단이 필요하다면 `../saju-platform/docs/product_context.md`와 `../saju-platform/docs/architecture.md`
 
-Sibling repository나 문서가 현재 workspace에 없다면 추측으로 계약을 바꾸지 말고, server 내부 계약과 사용자 요구사항을 기준으로 작업한다.
+Sibling Frontend repository 확인은 기본 선행 조건이 아니다. 다음 경우에만 관련 API 호출부와 mapper를 확인한다.
+
+- 공개 API의 path, request, response, 인증 방식 또는 오류 계약을 변경하는 경우
+- 사용자 요청이 Frontend와 Backend를 함께 다루는 경우
+- server 내부 자료만으로 제품 요구사항을 확정할 수 없는 경우
+
+Frontend 구현은 요구사항과 호환성을 이해하기 위한 참고 자료이며 Backend 계약의 source of truth가 아니다. 사용자가 명시하지 않은 Frontend 수정은 수행하지 않는다. Sibling repository나 문서가 없으면 추측으로 외부 계약을 바꾸지 말고, server 내부 계약과 사용자 요구사항을 기준으로 작업한다.
 
 ## System Boundary
 
-목표 구조는 다음과 같다.
+이 repository를 기준으로 한 시스템 경계는 다음과 같다.
 
 ```text
-Next.js Frontend on Vercel
-  -> HTTPS JSON API
-NestJS Backend on AWS Lightsail
-  -> Prisma
-Supabase PostgreSQL
+External Clients
+  -> HTTPS JSON API / OpenAPI
+NestJS Backend (this repository)
+  -> Prisma -> Supabase PostgreSQL
+  -> Auth, AI, Payment, Storage Providers
 ```
 
 Backend는 다음을 담당한다.
@@ -48,13 +55,13 @@ Backend는 다음을 담당한다.
 
 Backend에 다음을 넣지 않는다.
 
-- 화면 렌더링이나 frontend 전용 view state
-- frontend route 또는 UI 문구에 종속된 로직
+- 화면 렌더링이나 특정 client 전용 view state
+- 특정 화면 route, component 또는 UI 문구에 종속된 로직
 - client가 수행해야 하는 단순 presentation formatting
 - source code에 포함된 credential, secret, service role key
 - 특정 AI Provider의 원본 응답을 그대로 노출하는 API 계약
 
-Frontend가 보낸 사용자 ID, 가격, 결제 완료 여부, 리소스 소유권은 신뢰하지 않는다. 서버가 인증 정보와 저장된 데이터로 다시 판단한다.
+Client가 보낸 사용자 ID, 가격, 결제 완료 여부, 리소스 소유권은 신뢰하지 않는다. 서버가 인증 정보와 저장된 데이터로 다시 판단한다.
 
 ## Stack
 
@@ -160,19 +167,16 @@ type ApiErrorResponse = {
 - Swagger/OpenAPI 문서와 실제 runtime validation이 어긋나지 않도록 함께 변경한다.
 - validation은 controller 진입 시점에 끝내고, service 내부에서는 검증된 값만 받는다.
 
-## Cross-Repository Contract Rules
+## API Ownership and Consumer Compatibility
 
-Frontend와 Backend가 별도 repository이므로 server source file을 frontend에서 직접 import하지 않는다.
+- Backend의 runtime schema, OpenAPI 문서, contract test를 공개 API의 source of truth로 둔다.
+- 현재 특정 화면에 필요한 모양을 그대로 endpoint나 DTO로 옮기지 않고 resource와 use case 중심으로 계약을 설계한다.
+- Prisma model, database column, 만세력 library 타입, Provider 원본 응답을 외부 계약으로 노출하지 않는다.
+- 공개 계약 변경 시 하위 호환성을 우선하고, 의도적인 breaking change는 versioning과 migration 계획을 함께 제시한다.
+- API 계약과 OpenAPI 문서는 같은 변경에서 갱신하고, 영향을 받는 consumer가 있다면 호환성 영향만 확인해 완료 보고에 남긴다.
+- server source file을 다른 repository에서 직접 import하게 만들지 않는다. 여러 consumer에서 실제 필요성이 확인되기 전까지 별도 shared package를 만들지 않는다.
 
-계약 공유의 기준은 다음과 같다.
-
-1. Backend의 runtime schema와 OpenAPI 문서를 source of truth로 둔다.
-2. Frontend는 OpenAPI에서 생성한 API type/client를 사용하거나, 생성 체계 도입 전에는 entity의 `api` segment에 경계 타입을 둔다.
-3. Frontend domain model과 view model은 API DTO와 분리할 수 있다.
-4. Prisma type, database column, 만세력 library 반환 타입을 shared type으로 배포하지 않는다.
-5. 계약 변경 시 server contract test와 영향을 받는 frontend mapper를 함께 확인한다.
-
-별도 shared npm package는 여러 consumer에서 실제 필요성이 확인되기 전까지 만들지 않는다. 단일 frontend만 소비하는 현재 단계에서는 OpenAPI 기반 생성이 기본 방향이다.
+Sibling Frontend의 directory 구조, 상태 관리 방식, view model 규칙은 이 repository의 작업 규칙으로 가져오지 않는다. 계약 호환성을 확인할 때도 필요한 호출 경계만 읽고 Backend 내부 설계는 서버의 도메인과 운영 요구사항을 기준으로 결정한다.
 
 ## Prisma and Supabase Rules
 
@@ -213,7 +217,7 @@ Provider가 아직 정해지지 않은 기능은 interface와 mock implementatio
 
 - application 시작 시 필수 환경변수를 검증하고 잘못된 설정이면 즉시 실패한다.
 - `.env` 파일과 모든 secret은 commit하지 않는다.
-- CORS는 frontend origin allowlist로 제한한다.
+- CORS는 환경별로 명시한 client origin allowlist로 제한한다.
 - `helmet` 등 기본 HTTP 보안을 bootstrap에서 일관되게 적용한다.
 - request body와 upload size에는 명시적인 제한을 둔다.
 - 인증 endpoint, 계산 endpoint, 결제 endpoint에는 호환되는 throttling 수단을 적용한다.
@@ -236,7 +240,7 @@ Test가 production code의 타입 오류나 실제 계약 불일치를 숨기도
 - 사용자 요구사항과 현재 vertical slice에 필요한 코드만 추가한다.
 - 사용되지 않는 generic repository, base service, helper, decorator를 미리 만들지 않는다.
 - 기존 변경사항은 사용자 소유이므로 관련 없는 파일을 되돌리거나 덮어쓰지 않는다.
-- API 계약을 바꾸면 frontend 영향과 migration 필요성을 명시한다.
+- 공개 API 계약을 바꾸면 consumer 호환성 영향과 migration 필요성을 명시한다.
 - destructive migration, production data 변경, secret rotation은 명시적인 승인 없이 실행하지 않는다.
 
 ## Quality Gates
@@ -258,4 +262,4 @@ Prisma schema를 변경한 경우 migration 상태와 generated client도 확인
 - 구현 내용
 - 주요 설계 판단과 API 영향
 - lint, test, build 결과
-- 남은 migration, security 또는 cross-repository follow-up
+- 남은 migration, security 또는 consumer compatibility follow-up
