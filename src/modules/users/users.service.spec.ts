@@ -21,6 +21,7 @@ const prismaUser: PrismaUser = {
   authSubject: AUTH_SUBJECT,
   displayName: '카카오 사용자',
   status: PrismaUserStatus.PENDING_REGISTRATION,
+  primarySajuProfileId: null,
   createdAt: CREATED_AT,
   updatedAt: UPDATED_AT,
   withdrawnAt: null,

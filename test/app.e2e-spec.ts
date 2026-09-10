@@ -22,6 +22,12 @@ const OpenApiDocumentSchema = z.object({
     '/v1/reading-products/{productCode}': z.unknown(),
     '/v1/users/me': z.unknown(),
     '/v1/users/me/registration': z.unknown(),
+    '/v1/saju-profiles': z.unknown(),
+    '/v1/saju-profiles/{profileId}': z.object({
+      delete: z.unknown(),
+      get: z.unknown(),
+      patch: z.unknown(),
+    }),
   }),
 });
 
@@ -127,6 +133,34 @@ describe('Application (e2e)', () => {
   it('requires a Supabase access token for the current user API', async () => {
     const response = await request(app.getHttpServer())
       .get('/v1/users/me')
+      .expect(401);
+    const body = ApiErrorResponseSchema.parse(response.body);
+
+    expect(body.data?.reason).toBe('AUTHENTICATION_REQUIRED');
+  });
+
+  it('requires a Supabase access token for the saju profile API', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/v1/saju-profiles')
+      .expect(401);
+    const body = ApiErrorResponseSchema.parse(response.body);
+
+    expect(body.data?.reason).toBe('AUTHENTICATION_REQUIRED');
+  });
+
+  it('requires a Supabase access token to update a saju profile', async () => {
+    const response = await request(app.getHttpServer())
+      .patch('/v1/saju-profiles/827b4a76-b8c5-462f-afd4-af6415ca9f71')
+      .send({ displayName: '수정 이름' })
+      .expect(401);
+    const body = ApiErrorResponseSchema.parse(response.body);
+
+    expect(body.data?.reason).toBe('AUTHENTICATION_REQUIRED');
+  });
+
+  it('requires a Supabase access token to delete a saju profile', async () => {
+    const response = await request(app.getHttpServer())
+      .delete('/v1/saju-profiles/827b4a76-b8c5-462f-afd4-af6415ca9f71')
       .expect(401);
     const body = ApiErrorResponseSchema.parse(response.body);
 

@@ -8,7 +8,7 @@
 - 이 repository가 API 계약, 비즈니스 규칙, 데이터 무결성, 보안 경계의 source of truth다.
 - 현재 주요 API consumer인 Frontend는 별도 repository `saju-platform`에서 관리하지만, Frontend의 화면 구조나 구현 방식이 Backend 구조를 결정하지 않는다.
 - 현재 단계는 Backend Foundation 및 API Contract 설계 단계다.
-- 서비스명은 확정되지 않았으므로 코드, 변수, 디렉터리, 문서에 특정 브랜드명을 강하게 결합하지 않는다.
+- 서비스명은 `선녀 사주`로 확정되었다. 사용자 노출 이름은 이 표기를 사용하되 코드, 변수, 디렉터리는 기능과 도메인 중심으로 명명한다.
 - 필요한 기능을 얇은 vertical slice로 구현하고, 사용되지 않는 module이나 abstraction을 미리 만들지 않는다.
 
 ## Required Reading

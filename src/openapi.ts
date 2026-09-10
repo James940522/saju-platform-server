@@ -10,9 +10,20 @@ import {
   ReadingProductCodeSchema,
 } from './modules/reading-products/reading-product.contract.js';
 import {
+  CreateSajuProfileRequestSchema,
+  CreateSajuProfileResponseSchema,
+  DeleteSajuProfileResponseSchema,
+  GetSajuProfileResponseSchema,
+  GetSajuProfilesResponseSchema,
+  UpdateSajuProfileRequestSchema,
+  UpdateSajuProfileResponseSchema,
+} from './modules/saju-profiles/saju-profile.contract.js';
+import {
   CompleteRegistrationRequestSchema,
   CurrentUserResponseSchema,
 } from './modules/users/user.contract.js';
+
+const SERVICE_NAME = '선녀 사주';
 
 const BadRequestResponseSchema = createApiErrorResponseSchema(
   'BadRequestResponse',
@@ -38,14 +49,15 @@ const ServiceUnavailableResponseSchema = createApiErrorResponseSchema(
 const generatedOpenApiDocument = createDocument({
   openapi: '3.1.0',
   info: {
-    title: 'Saju Platform API',
+    title: `${SERVICE_NAME} API`,
     version: '1.0.0',
-    description: '사주 플랫폼 Backend API 계약',
+    description: `${SERVICE_NAME} Backend API 계약`,
   },
   tags: [
     { name: 'System', description: '서비스 상태 확인' },
     { name: 'Reading Products', description: '풀이 상품 카탈로그' },
     { name: 'Users', description: '인증된 사용자' },
+    { name: 'Saju Profiles', description: '사용자 소유 사주 프로필과 만세력' },
   ],
   components: {
     securitySchemes: {
@@ -197,6 +209,207 @@ const generatedOpenApiDocument = createDocument({
         },
       },
     },
+    '/v1/saju-profiles': {
+      post: {
+        operationId: 'createSajuProfile',
+        summary: '사주 프로필과 최초 만세력 생성',
+        tags: ['Saju Profiles'],
+        security: [{ supabaseBearer: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: CreateSajuProfileRequestSchema },
+          },
+        },
+        responses: {
+          201: {
+            description: '생성한 사주 프로필과 현재 만세력',
+            content: {
+              'application/json': { schema: CreateSajuProfileResponseSchema },
+            },
+          },
+          400: {
+            description: '입력 검증 또는 만세력 계산 실패',
+            content: {
+              'application/json': { schema: BadRequestResponseSchema },
+            },
+          },
+          401: {
+            description: '유효한 인증 토큰이 없음',
+            content: {
+              'application/json': { schema: UnauthorizedResponseSchema },
+            },
+          },
+          403: {
+            description: '가입 미완료 또는 이용할 수 없는 사용자 상태',
+            content: {
+              'application/json': { schema: ForbiddenResponseSchema },
+            },
+          },
+        },
+      },
+      get: {
+        operationId: 'getSajuProfiles',
+        summary: '내 사주 프로필 목록 조회',
+        tags: ['Saju Profiles'],
+        security: [{ supabaseBearer: [] }],
+        responses: {
+          200: {
+            description: '현재 사용자가 소유한 사주 프로필 목록',
+            content: {
+              'application/json': { schema: GetSajuProfilesResponseSchema },
+            },
+          },
+          401: {
+            description: '유효한 인증 토큰이 없음',
+            content: {
+              'application/json': { schema: UnauthorizedResponseSchema },
+            },
+          },
+          403: {
+            description: '가입 미완료 또는 이용할 수 없는 사용자 상태',
+            content: {
+              'application/json': { schema: ForbiddenResponseSchema },
+            },
+          },
+        },
+      },
+    },
+    '/v1/saju-profiles/{profileId}': {
+      get: {
+        operationId: 'getSajuProfile',
+        summary: '내 사주 프로필과 현재 만세력 조회',
+        tags: ['Saju Profiles'],
+        security: [{ supabaseBearer: [] }],
+        requestParams: {
+          path: z.strictObject({ profileId: z.uuid() }),
+        },
+        responses: {
+          200: {
+            description: '사주 프로필과 현재 만세력',
+            content: {
+              'application/json': { schema: GetSajuProfileResponseSchema },
+            },
+          },
+          400: {
+            description: '잘못된 프로필 ID',
+            content: {
+              'application/json': { schema: BadRequestResponseSchema },
+            },
+          },
+          401: {
+            description: '유효한 인증 토큰이 없음',
+            content: {
+              'application/json': { schema: UnauthorizedResponseSchema },
+            },
+          },
+          403: {
+            description: '가입 미완료 또는 이용할 수 없는 사용자 상태',
+            content: {
+              'application/json': { schema: ForbiddenResponseSchema },
+            },
+          },
+          404: {
+            description: '소유한 프로필을 찾을 수 없음',
+            content: {
+              'application/json': { schema: NotFoundResponseSchema },
+            },
+          },
+        },
+      },
+      patch: {
+        operationId: 'updateSajuProfile',
+        summary: '내 사주 프로필 수정',
+        description:
+          '표시 정보만 바뀌면 현재 만세력을 유지하고, 계산 입력이 바뀌면 불변 만세력 스냅샷을 생성하거나 동일 계산본을 재사용합니다.',
+        tags: ['Saju Profiles'],
+        security: [{ supabaseBearer: [] }],
+        requestParams: {
+          path: z.strictObject({ profileId: z.uuid() }),
+        },
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: UpdateSajuProfileRequestSchema },
+          },
+        },
+        responses: {
+          200: {
+            description: '수정한 사주 프로필과 현재 만세력',
+            content: {
+              'application/json': { schema: UpdateSajuProfileResponseSchema },
+            },
+          },
+          400: {
+            description: '잘못된 프로필 ID, 입력 검증 또는 만세력 계산 실패',
+            content: {
+              'application/json': { schema: BadRequestResponseSchema },
+            },
+          },
+          401: {
+            description: '유효한 인증 토큰이 없음',
+            content: {
+              'application/json': { schema: UnauthorizedResponseSchema },
+            },
+          },
+          403: {
+            description: '가입 미완료 또는 이용할 수 없는 사용자 상태',
+            content: {
+              'application/json': { schema: ForbiddenResponseSchema },
+            },
+          },
+          404: {
+            description: '소유한 프로필을 찾을 수 없음',
+            content: {
+              'application/json': { schema: NotFoundResponseSchema },
+            },
+          },
+        },
+      },
+      delete: {
+        operationId: 'deleteSajuProfile',
+        summary: '내 사주 프로필과 종속 데이터 영구 삭제',
+        description:
+          '프로필을 영구 삭제하고 해당 프로필의 모든 만세력 스냅샷을 함께 삭제합니다. 향후 저장 풀이 결과는 동일한 삭제 트랜잭션에서 명시적으로 삭제하며 결제·정산 기록은 보존합니다.',
+        tags: ['Saju Profiles'],
+        security: [{ supabaseBearer: [] }],
+        requestParams: {
+          path: z.strictObject({ profileId: z.uuid() }),
+        },
+        responses: {
+          200: {
+            description: '삭제한 프로필 ID와 새 대표 프로필 ID',
+            content: {
+              'application/json': { schema: DeleteSajuProfileResponseSchema },
+            },
+          },
+          400: {
+            description: '잘못된 프로필 ID',
+            content: {
+              'application/json': { schema: BadRequestResponseSchema },
+            },
+          },
+          401: {
+            description: '유효한 인증 토큰이 없음',
+            content: {
+              'application/json': { schema: UnauthorizedResponseSchema },
+            },
+          },
+          403: {
+            description: '가입 미완료 또는 이용할 수 없는 사용자 상태',
+            content: {
+              'application/json': { schema: ForbiddenResponseSchema },
+            },
+          },
+          404: {
+            description: '소유한 프로필을 찾을 수 없음',
+            content: {
+              'application/json': { schema: NotFoundResponseSchema },
+            },
+          },
+        },
+      },
+    },
   },
 });
 
@@ -211,7 +424,7 @@ export const OPEN_API_DOCUMENT =
 
 export function setupOpenApi(app: INestApplication) {
   SwaggerModule.setup('docs', app, OPEN_API_DOCUMENT, {
-    customSiteTitle: 'Saju Platform API Docs',
+    customSiteTitle: `${SERVICE_NAME} API Docs`,
     jsonDocumentUrl: '/openapi.json',
     yamlDocumentUrl: '/openapi.yaml',
   });

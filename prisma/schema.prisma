@@ -24,15 +24,49 @@ enum UserConsentType {
   @@map("user_consent_type")
 }
 
+enum SajuRelationType {
+  SELF    @map("self")
+  FAMILY  @map("family")
+  FRIEND  @map("friend")
+  PARTNER @map("partner")
+  OTHER   @map("other")
+
+  @@map("saju_relation_type")
+}
+
+enum SajuCalendarType {
+  SOLAR @map("solar")
+  LUNAR @map("lunar")
+
+  @@map("saju_calendar_type")
+}
+
+enum BirthTimePrecision {
+  EXACT   @map("exact")
+  UNKNOWN @map("unknown")
+
+  @@map("birth_time_precision")
+}
+
+enum LuckCycleGender {
+  MALE   @map("male")
+  FEMALE @map("female")
+
+  @@map("luck_cycle_gender")
+}
+
 model User {
-  id          String        @id @default(uuid()) @db.Uuid
-  authSubject String        @unique @map("auth_subject") @db.Uuid
-  displayName String?       @map("display_name") @db.VarChar(50)
-  status      UserStatus    @default(PENDING_REGISTRATION)
-  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
-  withdrawnAt DateTime?     @map("withdrawn_at") @db.Timestamptz(3)
-  consents    UserConsent[]
+  id                   String        @id @default(uuid()) @db.Uuid
+  authSubject          String        @unique @map("auth_subject") @db.Uuid
+  displayName          String?       @map("display_name") @db.VarChar(50)
+  status               UserStatus    @default(PENDING_REGISTRATION)
+  primarySajuProfileId String?       @unique @map("primary_saju_profile_id") @db.Uuid
+  createdAt            DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  withdrawnAt          DateTime?     @map("withdrawn_at") @db.Timestamptz(3)
+  consents             UserConsent[]
+  primarySajuProfile   SajuProfile?  @relation("PrimarySajuProfile", fields: [primarySajuProfileId], references: [id], onDelete: SetNull)
+  sajuProfiles         SajuProfile[] @relation("OwnedSajuProfiles")
 
   @@map("users")
 }
@@ -48,4 +82,50 @@ model UserConsent {
   @@unique([userId, type, version])
   @@index([userId])
   @@map("user_consents")
+}
+
+model SajuProfile {
+  id                 String             @id @default(uuid()) @db.Uuid
+  ownerUserId        String             @map("owner_user_id") @db.Uuid
+  displayName        String             @map("display_name") @db.VarChar(30)
+  relationType       SajuRelationType   @map("relation_type")
+  calendarType       SajuCalendarType   @map("calendar_type")
+  birthYear          Int                @map("birth_year") @db.SmallInt
+  birthMonth         Int                @map("birth_month") @db.SmallInt
+  birthDay           Int                @map("birth_day") @db.SmallInt
+  isLeapMonth        Boolean            @default(false) @map("is_leap_month")
+  birthTimePrecision BirthTimePrecision @map("birth_time_precision")
+  birthHour          Int?               @map("birth_hour") @db.SmallInt
+  birthMinute        Int?               @map("birth_minute") @db.SmallInt
+  luckCycleGender    LuckCycleGender    @map("luck_cycle_gender")
+  timezone           String             @default("Asia/Seoul") @db.VarChar(64)
+  currentChartId     String?            @unique @map("current_chart_id") @db.Uuid
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt          DateTime?          @map("deleted_at") @db.Timestamptz(3)
+  owner              User               @relation("OwnedSajuProfiles", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  primaryForUser     User?              @relation("PrimarySajuProfile")
+  charts             SajuChart[]        @relation("ProfileCharts")
+  currentChart       SajuChart?         @relation("CurrentSajuChart", fields: [currentChartId], references: [id], onDelete: SetNull)
+
+  @@index([ownerUserId, deletedAt])
+  @@map("saju_profiles")
+}
+
+model SajuChart {
+  id            String       @id @default(uuid()) @db.Uuid
+  profileId     String       @map("profile_id") @db.Uuid
+  schemaVersion Int          @map("schema_version") @db.SmallInt
+  engineName    String       @map("engine_name") @db.VarChar(50)
+  engineVersion String       @map("engine_version") @db.VarChar(50)
+  policyVersion String       @map("policy_version") @db.VarChar(50)
+  inputHash     String       @map("input_hash") @db.Char(64)
+  payload       Json         @db.JsonB
+  calculatedAt  DateTime     @map("calculated_at") @db.Timestamptz(3)
+  profile       SajuProfile  @relation("ProfileCharts", fields: [profileId], references: [id], onDelete: Cascade)
+  currentFor    SajuProfile? @relation("CurrentSajuChart")
+
+  @@unique([profileId, inputHash])
+  @@index([profileId, calculatedAt])
+  @@map("saju_charts")
 }

@@ -7,6 +7,7 @@ import { validateEnvironment } from './config/environment.schema.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { ReadingProductsModule } from './modules/reading-products/reading-products.module.js';
+import { SajuProfilesModule } from './modules/saju-profiles/saju-profiles.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 
 @Module({
@@ -19,6 +20,7 @@ import { UsersModule } from './modules/users/users.module.js';
     DatabaseModule,
     HealthModule,
     ReadingProductsModule,
+    SajuProfilesModule,
     UsersModule,
   ],
   providers: [

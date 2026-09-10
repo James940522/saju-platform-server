@@ -1,6 +1,6 @@
-# Saju Platform Server
+# 선녀 사주 Backend API
 
-한국 사주/운세 기반 서비스의 NestJS Backend API다. Frontend는 별도 `saju-platform` repository에서 관리한다.
+`선녀 사주` 서비스의 NestJS Backend API다. Frontend는 별도 `saju-platform` repository에서 관리한다.
 
 ## Stack
 
@@ -46,6 +46,11 @@ npm run start:dev
 | `GET` | `/v1/reading-products/:productCode` | 풀이 상품 상세 |
 | `PUT` | `/v1/users/me` | Supabase 인증 주체의 앱 User 생성 또는 조회 |
 | `GET` | `/v1/users/me` | 현재 앱 User 조회 |
+| `POST` | `/v1/saju-profiles` | 사주 프로필과 최초 만세력 생성 |
+| `GET` | `/v1/saju-profiles` | 내 사주 프로필 목록 조회 |
+| `GET` | `/v1/saju-profiles/:profileId` | 내 사주 프로필과 현재 만세력 조회 |
+| `PATCH` | `/v1/saju-profiles/:profileId` | 내 사주 프로필 수정 |
+| `DELETE` | `/v1/saju-profiles/:profileId` | 프로필과 종속 만세력 데이터 영구 삭제 |
 | `GET` | `/docs` | Swagger UI |
 | `GET` | `/openapi.json` | OpenAPI 3.1 JSON |
 
