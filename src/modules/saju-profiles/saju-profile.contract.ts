@@ -67,6 +67,8 @@ export const BirthInputSchema = z
   })
   .meta({ id: 'BirthInput' });
 
+export const SajuProfileCreationKeySchema = z.uuid().toLowerCase().optional();
+
 export const CreateSajuProfileRequestSchema = z
   .strictObject({
     displayName: z.string().trim().min(1).max(30),
@@ -194,6 +196,8 @@ const SajuChartWarningSchema = z.strictObject({
     'birth_time_unknown',
     'luck_cycle_unavailable',
     'near_solar_term_boundary',
+    'day_boundary_uncertain',
+    'historical_time_assumed',
   ]),
   message: z.string().min(1),
 });
@@ -207,6 +211,7 @@ export const SajuChartSnapshotV1Schema = z
       engineVersion: z.string().min(1),
       policyVersion: z.string().min(1),
       calculatedAt: z.iso.datetime(),
+      timeZoneDatabaseVersion: z.string().min(1).optional(),
     }),
     normalizedBirth: z.strictObject({
       calendarType: SajuCalendarTypeSchema,
@@ -216,6 +221,24 @@ export const SajuChartSnapshotV1Schema = z
       time: BirthTimeSchema,
       luckCycleGender: LuckCycleGenderSchema,
       timezone: z.literal('Asia/Seoul'),
+      timeCorrection: z
+        .strictObject({
+          method: z.literal('korean_mean_solar'),
+          referenceLongitude: z.literal(127.5),
+          equationOfTimeApplied: z.literal(false),
+          civilUtcOffsetMinutes: z.number().int().nullable(),
+          adjustmentMinutes: z.number().int().nullable(),
+          correctedSolarDate: BirthDateSchema.extend({
+            year: z.number().int().min(1799).max(2300),
+          }).nullable(),
+          correctedTime: z
+            .strictObject({
+              hour: z.number().int().min(0).max(23),
+              minute: z.number().int().min(0).max(59),
+            })
+            .nullable(),
+        })
+        .optional(),
     }),
     pillars: z.strictObject({
       year: NatalPillarSchema,

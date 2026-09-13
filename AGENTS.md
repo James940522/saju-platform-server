@@ -217,6 +217,8 @@ Provider가 아직 정해지지 않은 기능은 interface와 mock implementatio
 
 - application 시작 시 필수 환경변수를 검증하고 잘못된 설정이면 즉시 실패한다.
 - `.env` 파일과 모든 secret은 commit하지 않는다.
+- 외부 API 인증키는 사용자가 서버 루트 `.env`에서 직접 관리한다. 새 Provider도 이 방식을 따르고, `.env.example`에는 키 이름과 빈 입력란만 제공한다. 서버는 ConfigService와 시작 시 환경변수 검증을 통해 읽는다.
+- AI 모델과 생성 옵션은 `src/config/ai-model.config.ts`에서 상품별로 관리하고 Provider 코드에 모델 경로를 하드코딩하지 않는다. 모델별 API 형식과 옵션 지원을 확인하며 인증키는 모델 설정 파일에 넣지 않는다.
 - CORS는 환경별로 명시한 client origin allowlist로 제한한다.
 - `helmet` 등 기본 HTTP 보안을 bootstrap에서 일관되게 적용한다.
 - request body와 upload size에는 명시적인 제한을 둔다.

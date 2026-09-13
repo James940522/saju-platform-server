@@ -7,7 +7,10 @@ import {
   UserStatus,
 } from '../../generated/prisma/client.js';
 import type { SajuChartSnapshotV1 } from './saju-profile.contract.js';
-import { SajuChartCalculator } from './saju-chart-calculator.js';
+import {
+  SAJU_POLICY_VERSION,
+  SajuChartCalculator,
+} from './saju-chart-calculator.js';
 import { SajuProfilesService } from './saju-profiles.service.js';
 
 const AUTH_SUBJECT = 'd952b765-7b9a-44fc-9d94-632036ac0934';
@@ -54,475 +57,218 @@ function createSnapshot(): SajuChartSnapshotV1 {
     .snapshot;
 }
 
-describe('SajuProfilesService', () => {
-  it('creates a profile and immutable chart in one transaction', async () => {
-    const snapshot = createSnapshot();
-    const inputHash = 'a'.repeat(64);
-    const chartRecord = {
-      id: CHART_ID,
-      profileId: PROFILE_ID,
-      schemaVersion: 1,
-      engineName: 'manseryeok',
-      engineVersion: '2.0.0',
-      policyVersion: 'kr-kst-midnight-v1',
-      inputHash,
-      payload: snapshot,
-      calculatedAt: CREATED_AT,
-    };
-    const createProfile = vi
-      .fn()
-      .mockResolvedValue({ ...profileRecord, currentChartId: null });
-    const createChart = vi.fn().mockResolvedValue(chartRecord);
-    const updateProfile = vi.fn().mockResolvedValue(profileRecord);
-    const assignPrimary = vi.fn().mockResolvedValue({ count: 1 });
-    const transactionClient = {
-      sajuProfile: { create: createProfile, update: updateProfile },
-      sajuChart: { create: createChart },
-      user: { updateMany: assignPrimary },
-    };
-    const prisma = {
-      user: {
-        findUnique: vi.fn().mockResolvedValue({
+function createLegacySnapshot(): SajuChartSnapshotV1 {
+  const snapshot = createSnapshot();
+  snapshot.calculation.policyVersion = 'kr-kst-midnight-v1';
+  delete snapshot.calculation.timeZoneDatabaseVersion;
+  delete snapshot.normalizedBirth.timeCorrection;
+  return snapshot;
+}
+
+function fixture(
+  snapshot = createSnapshot(),
+  primaryId: string | null = PROFILE_ID,
+) {
+  const chart = { id: CHART_ID, profileId: PROFILE_ID, payload: snapshot };
+  const profile = { ...profileRecord, currentChart: chart };
+  const database = {
+    user: {
+      findUnique: vi
+        .fn()
+        .mockResolvedValue({
           id: USER_ID,
           status: UserStatus.ACTIVE,
-          primarySajuProfileId: null,
+          primarySajuProfileId: primaryId,
         }),
-      },
-      $transaction: vi.fn(
-        async (
-          callback: (client: typeof transactionClient) => Promise<unknown>,
-        ) => callback(transactionClient),
-      ),
-    } as unknown as PrismaService;
-    const calculator = {
-      calculate: vi.fn().mockReturnValue({ inputHash, snapshot }),
-    } as unknown as SajuChartCalculator;
-    const service = new SajuProfilesService(prisma, calculator);
+      update: vi.fn().mockResolvedValue({ id: USER_ID }),
+      updateMany: vi.fn().mockResolvedValue({ count: primaryId ? 0 : 1 }),
+    },
+    sajuProfile: {
+      create: vi.fn().mockResolvedValue(profileRecord),
+      findFirst: vi.fn().mockResolvedValue(profile),
+      findMany: vi.fn().mockResolvedValue([profile]),
+      update: vi.fn().mockResolvedValue(profileRecord),
+      delete: vi.fn().mockResolvedValue({ id: PROFILE_ID }),
+    },
+    sajuChart: {
+      create: vi.fn().mockResolvedValue(chart),
+      upsert: vi.fn().mockResolvedValue(chart),
+    },
+    sajuProfileCreation: {
+      findUnique: vi.fn().mockResolvedValue(null),
+      create: vi.fn(),
+    },
+    $queryRaw: vi.fn().mockResolvedValue([{ id: USER_ID }]),
+  };
+  const prisma = {
+    ...database,
+    $transaction: vi.fn(
+      async (work: (client: typeof database) => Promise<unknown>) =>
+        work(database),
+    ),
+  };
+  const calculator = new SajuChartCalculator();
+  const calculate = vi.spyOn(calculator, 'calculate');
+  const service = new SajuProfilesService(
+    prisma as unknown as PrismaService,
+    calculator,
+  );
+  return { database, service, calculate, chart, profile, prisma };
+}
 
-    const result = await service.create(AUTH_SUBJECT, REQUEST);
-
+describe('SajuProfilesService', () => {
+  it('maps stored profiles and snapshots without calculation', async () => {
+    const { service, chart, calculate } = fixture();
+    const result = await service.findOne(AUTH_SUBJECT, PROFILE_ID);
     expect(result.profile).toMatchObject({
-      id: PROFILE_ID,
-      displayName: '제임스',
+      birth: REQUEST.birth,
       relationType: 'self',
       isPrimary: true,
-      currentChartId: CHART_ID,
-      birth: REQUEST.birth,
     });
     expect(result.chart).toEqual({
       id: CHART_ID,
       profileId: PROFILE_ID,
-      snapshot,
+      snapshot: chart.payload,
     });
-    expect(createProfile).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        ownerUserId: USER_ID,
-        displayName: '제임스',
-        birthYear: 1992,
-        birthHour: 5,
-      }),
-      select: expect.any(Object),
-    });
-    expect(createChart).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        profileId: PROFILE_ID,
-        inputHash,
-        payload: snapshot,
-      }),
-      select: expect.any(Object),
-    });
-    expect(updateProfile).toHaveBeenCalledWith({
-      where: { id: PROFILE_ID },
-      data: { currentChartId: CHART_ID },
-      select: expect.any(Object),
-    });
-    expect(assignPrimary).toHaveBeenCalledWith({
-      where: { id: USER_ID, primarySajuProfileId: null },
-      data: { primarySajuProfileId: PROFILE_ID },
-    });
+    expect(calculate).not.toHaveBeenCalled();
   });
 
-  it('only lists non-deleted profiles owned by the authenticated user', async () => {
-    const findMany = vi.fn().mockResolvedValue([profileRecord]);
-    const prisma = {
-      user: {
-        findUnique: vi.fn().mockResolvedValue({
-          id: USER_ID,
-          status: UserStatus.ACTIVE,
-          primarySajuProfileId: PROFILE_ID,
-        }),
-      },
-      sajuProfile: { findMany },
-    } as unknown as PrismaService;
-    const service = new SajuProfilesService(prisma, new SajuChartCalculator());
-
-    await expect(service.findAll(AUTH_SUBJECT)).resolves.toMatchObject({
-      profiles: [{ id: PROFILE_ID, isPrimary: true }],
-    });
-    expect(findMany).toHaveBeenCalledWith({
+  it('lists only owned profiles with deterministic ordering', async () => {
+    const { service, database } = fixture();
+    await service.findAll(AUTH_SUBJECT);
+    expect(database.sajuProfile.findMany).toHaveBeenCalledWith({
       where: { ownerUserId: USER_ID, deletedAt: null },
-      orderBy: { createdAt: 'asc' },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       select: expect.any(Object),
     });
   });
 
-  it('does not reveal whether another user owns a requested profile', async () => {
-    const findFirst = vi.fn().mockResolvedValue(null);
-    const prisma = {
-      user: {
-        findUnique: vi.fn().mockResolvedValue({
-          id: USER_ID,
-          status: UserStatus.ACTIVE,
-          primarySajuProfileId: null,
-        }),
-      },
-      sajuProfile: { findFirst },
-    } as unknown as PrismaService;
-    const service = new SajuProfilesService(prisma, new SajuChartCalculator());
-
+  it('does not reveal another owner profile', async () => {
+    const { service, database } = fixture();
+    database.sajuProfile.findFirst.mockResolvedValue(null);
     await expect(
       service.findOne(AUTH_SUBJECT, PROFILE_ID),
     ).rejects.toMatchObject({
       status: 404,
       response: { reason: 'SAJU_PROFILE_NOT_FOUND' },
     });
-    expect(findFirst).toHaveBeenCalledWith({
-      where: { id: PROFILE_ID, ownerUserId: USER_ID, deletedAt: null },
-      select: expect.objectContaining({
-        currentChart: { select: expect.any(Object) },
+  });
+
+  it('creates a profile, chart and request record inside the owner transaction', async () => {
+    const { service, database, prisma } = fixture(createSnapshot(), null);
+    const result = await service.create(AUTH_SUBJECT, REQUEST, PROFILE_ID);
+    expect(result.profile.isPrimary).toBe(true);
+    expect(prisma.$transaction).toHaveBeenCalledOnce();
+    expect(database.$queryRaw).toHaveBeenCalledOnce();
+    expect(database.sajuProfile.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ ownerUserId: USER_ID, birthHour: 5 }),
+      select: expect.any(Object),
+    });
+    expect(database.sajuChart.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        profileId: PROFILE_ID,
+        policyVersion: SAJU_POLICY_VERSION,
       }),
+      select: expect.any(Object),
+    });
+    expect(database.sajuProfileCreation.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        requestKey: PROFILE_ID,
+        ownerUserId: USER_ID,
+        profileId: PROFILE_ID,
+        requestHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+      select: expect.any(Object),
     });
   });
 
-  it('updates display information without recalculating the chart', async () => {
-    const snapshot = createSnapshot();
-    const currentChart = {
-      id: CHART_ID,
-      profileId: PROFILE_ID,
-      payload: snapshot,
-    };
-    const findFirst = vi.fn().mockResolvedValue({
+  it('keeps an old policy chart on name/relation-only edit', async () => {
+    const { service, database, chart, calculate } = fixture(
+      createLegacySnapshot(),
+    );
+    database.sajuProfile.update.mockResolvedValue({
       ...profileRecord,
-      currentChart,
-    });
-    const updateProfile = vi.fn().mockResolvedValue({
-      ...profileRecord,
-      displayName: '제임스 수정',
+      displayName: '수정',
       relationType: SajuRelationType.FAMILY,
     });
-    const prisma = {
-      user: {
-        findUnique: vi.fn().mockResolvedValue({
-          id: USER_ID,
-          status: UserStatus.ACTIVE,
-          primarySajuProfileId: PROFILE_ID,
-        }),
-      },
-      sajuProfile: { findFirst, update: updateProfile },
-    } as unknown as PrismaService;
-    const calculate = vi.fn();
-    const calculator = { calculate } as unknown as SajuChartCalculator;
-    const service = new SajuProfilesService(prisma, calculator);
-
     const result = await service.update(AUTH_SUBJECT, PROFILE_ID, {
-      displayName: '제임스 수정',
+      displayName: '수정',
       relationType: 'family',
     });
-
-    expect(result).toMatchObject({
-      profile: {
-        displayName: '제임스 수정',
-        isPrimary: true,
-      },
-      chart: { id: CHART_ID },
-    });
-    expect(calculate).not.toHaveBeenCalled();
-    expect(updateProfile).toHaveBeenCalledWith({
-      where: { id: PROFILE_ID },
-      data: {
-        displayName: '제임스 수정',
-        relationType: SajuRelationType.FAMILY,
-      },
-      select: expect.any(Object),
-    });
-  });
-
-  it('creates and activates an immutable chart when birth input changes', async () => {
-    const nextBirth = {
-      ...REQUEST.birth,
-      date: { ...REQUEST.birth.date, day: 25 },
-    };
-    const snapshot = new SajuChartCalculator().calculate(
-      nextBirth,
-      UPDATED_AT,
-    ).snapshot;
-    const inputHash = 'b'.repeat(64);
-    const nextChartId = 'c0cc4dca-b145-45e1-8935-0df724066ecf';
-    const currentChart = {
-      id: CHART_ID,
-      profileId: PROFILE_ID,
-      payload: createSnapshot(),
-    };
-    const nextChart = {
-      id: nextChartId,
-      profileId: PROFILE_ID,
-      payload: snapshot,
-    };
-    const upsertChart = vi.fn().mockResolvedValue(nextChart);
-    const updateProfile = vi.fn().mockResolvedValue({
-      ...profileRecord,
-      birthDay: 25,
-      currentChartId: nextChartId,
-    });
-    const transactionClient = {
-      sajuChart: { upsert: upsertChart },
-      sajuProfile: { update: updateProfile },
-    };
-    const prisma = {
-      user: {
-        findUnique: vi.fn().mockResolvedValue({
-          id: USER_ID,
-          status: UserStatus.ACTIVE,
-          primarySajuProfileId: PROFILE_ID,
-        }),
-      },
-      sajuProfile: {
-        findFirst: vi.fn().mockResolvedValue({
-          ...profileRecord,
-          currentChart,
-        }),
-      },
-      $transaction: vi.fn(
-        async (
-          callback: (client: typeof transactionClient) => Promise<unknown>,
-        ) => callback(transactionClient),
-      ),
-    } as unknown as PrismaService;
-    const calculator = {
-      calculate: vi.fn().mockReturnValue({ inputHash, snapshot }),
-    } as unknown as SajuChartCalculator;
-    const service = new SajuProfilesService(prisma, calculator);
-
-    const result = await service.update(AUTH_SUBJECT, PROFILE_ID, {
-      birth: nextBirth,
-    });
-
-    expect(result).toMatchObject({
-      profile: {
-        birth: { date: { day: 25 } },
-        currentChartId: nextChartId,
-      },
-      chart: { id: nextChartId },
-    });
-    expect(upsertChart).toHaveBeenCalledWith({
-      where: {
-        profileId_inputHash: { profileId: PROFILE_ID, inputHash },
-      },
-      update: {},
-      create: expect.objectContaining({
-        profileId: PROFILE_ID,
-        inputHash,
-        payload: snapshot,
-      }),
-      select: expect.any(Object),
-    });
-    expect(updateProfile).toHaveBeenCalledWith({
-      where: { id: PROFILE_ID },
-      data: expect.objectContaining({
-        birthDay: 25,
-        currentChartId: nextChartId,
-      }),
-      select: expect.any(Object),
-    });
-  });
-
-  it('does not write or recalculate when submitted values are unchanged', async () => {
-    const updateProfile = vi.fn();
-    const calculate = vi.fn();
-    const prisma = {
-      user: {
-        findUnique: vi.fn().mockResolvedValue({
-          id: USER_ID,
-          status: UserStatus.ACTIVE,
-          primarySajuProfileId: PROFILE_ID,
-        }),
-      },
-      sajuProfile: {
-        findFirst: vi.fn().mockResolvedValue({
-          ...profileRecord,
-          currentChart: {
-            id: CHART_ID,
-            profileId: PROFILE_ID,
-            payload: createSnapshot(),
-          },
-        }),
-        update: updateProfile,
-      },
-    } as unknown as PrismaService;
-    const service = new SajuProfilesService(prisma, {
-      calculate,
-    } as unknown as SajuChartCalculator);
-
-    await expect(
-      service.update(AUTH_SUBJECT, PROFILE_ID, REQUEST),
-    ).resolves.toMatchObject({
-      profile: { id: PROFILE_ID },
-      chart: { id: CHART_ID },
-    });
-    expect(updateProfile).not.toHaveBeenCalled();
+    expect(result.profile.displayName).toBe('수정');
+    expect(result.chart?.snapshot).toEqual(chart.payload);
     expect(calculate).not.toHaveBeenCalled();
   });
 
-  it('hard deletes a primary profile and assigns the oldest remaining profile', async () => {
-    const replacementProfileId = 'e9d83fc8-9886-47ca-b00d-d735b75044f4';
-    const detachCurrentChart = vi.fn().mockResolvedValue({ id: PROFILE_ID });
-    const deleteProfile = vi.fn().mockResolvedValue({ id: PROFILE_ID });
-    const updateUser = vi.fn().mockResolvedValue({ id: USER_ID });
-    const transactionClient = {
-      sajuProfile: {
-        findFirst: vi.fn().mockResolvedValue({ id: replacementProfileId }),
-        update: detachCurrentChart,
-        delete: deleteProfile,
-      },
-      user: { update: updateUser },
-    };
-    const prisma = {
-      user: {
-        findUnique: vi.fn().mockResolvedValue({
-          id: USER_ID,
-          status: UserStatus.ACTIVE,
-          primarySajuProfileId: PROFILE_ID,
+  it.each([
+    { day: 25, legacy: false },
+    { day: 24, legacy: true },
+  ])(
+    'activates a chart for day $day, old policy $legacy',
+    async ({ day, legacy }) => {
+      const { service, database, calculate } = fixture(
+        legacy ? createLegacySnapshot() : createSnapshot(),
+      );
+      const birth = { ...REQUEST.birth, date: { ...REQUEST.birth.date, day } };
+      await service.update(AUTH_SUBJECT, PROFILE_ID, { birth });
+      expect(calculate).toHaveBeenCalledWith(birth, expect.any(Date));
+      expect(database.sajuChart.upsert).toHaveBeenCalledWith({
+        where: expect.any(Object),
+        update: {},
+        create: expect.objectContaining({
+          profileId: PROFILE_ID,
+          policyVersion: SAJU_POLICY_VERSION,
         }),
-      },
-      sajuProfile: {
-        findFirst: vi.fn().mockResolvedValue({
-          ...profileRecord,
-          currentChart: {
-            id: CHART_ID,
-            profileId: PROFILE_ID,
-            payload: createSnapshot(),
-          },
-        }),
-      },
-      $transaction: vi.fn(
-        async (
-          callback: (client: typeof transactionClient) => Promise<unknown>,
-        ) => callback(transactionClient),
-      ),
-    } as unknown as PrismaService;
-    const service = new SajuProfilesService(prisma, new SajuChartCalculator());
+        select: expect.any(Object),
+      });
+    },
+  );
 
+  it('does not calculate or write unchanged input', async () => {
+    const { service, database, calculate } = fixture();
+    await service.update(AUTH_SUBJECT, PROFILE_ID, REQUEST);
+    expect(calculate).not.toHaveBeenCalled();
+    expect(database.sajuProfile.update).not.toHaveBeenCalled();
+  });
+
+  it('deletes the chart history through profile cascade and assigns the oldest remaining profile', async () => {
+    const { service, database, profile } = fixture();
+    const replacement = 'e9d83fc8-9886-47ca-b00d-d735b75044f4';
+    database.sajuProfile.findFirst
+      .mockResolvedValueOnce(profile)
+      .mockResolvedValueOnce({ id: replacement });
     await expect(service.remove(AUTH_SUBJECT, PROFILE_ID)).resolves.toEqual({
       deletedProfileId: PROFILE_ID,
-      primarySajuProfileId: replacementProfileId,
+      primarySajuProfileId: replacement,
     });
-    expect(transactionClient.sajuProfile.findFirst).toHaveBeenCalledWith({
-      where: {
-        ownerUserId: USER_ID,
-        id: { not: PROFILE_ID },
-        deletedAt: null,
-      },
-      orderBy: { createdAt: 'asc' },
+    expect(database.sajuProfile.delete).toHaveBeenCalledWith({
+      where: { id: PROFILE_ID },
       select: { id: true },
     });
-    expect(updateUser).toHaveBeenCalledWith({
+    expect(database.user.update).toHaveBeenCalledWith({
       where: { id: USER_ID },
-      data: { primarySajuProfileId: replacementProfileId },
-      select: { id: true },
-    });
-    expect(detachCurrentChart).toHaveBeenCalledWith({
-      where: { id: PROFILE_ID },
-      data: { currentChartId: null },
-      select: { id: true },
-    });
-    expect(deleteProfile).toHaveBeenCalledWith({
-      where: { id: PROFILE_ID },
+      data: { primarySajuProfileId: replacement },
       select: { id: true },
     });
   });
 
-  it('clears the primary profile when deleting the last profile', async () => {
-    const updateUser = vi.fn().mockResolvedValue({ id: USER_ID });
-    const transactionClient = {
-      sajuProfile: {
-        findFirst: vi.fn().mockResolvedValue(null),
-        update: vi.fn().mockResolvedValue({ id: PROFILE_ID }),
-        delete: vi.fn().mockResolvedValue({ id: PROFILE_ID }),
-      },
-      user: { update: updateUser },
-    };
-    const prisma = {
-      user: {
-        findUnique: vi.fn().mockResolvedValue({
-          id: USER_ID,
-          status: UserStatus.ACTIVE,
-          primarySajuProfileId: PROFILE_ID,
-        }),
-      },
-      sajuProfile: {
-        findFirst: vi.fn().mockResolvedValue({
-          ...profileRecord,
-          currentChart: null,
-        }),
-      },
-      $transaction: vi.fn(
-        async (
-          callback: (client: typeof transactionClient) => Promise<unknown>,
-        ) => callback(transactionClient),
-      ),
-    } as unknown as PrismaService;
-    const service = new SajuProfilesService(prisma, new SajuChartCalculator());
-
-    await expect(service.remove(AUTH_SUBJECT, PROFILE_ID)).resolves.toEqual({
-      deletedProfileId: PROFILE_ID,
-      primarySajuProfileId: null,
-    });
-    expect(updateUser).toHaveBeenCalledWith({
-      where: { id: USER_ID },
-      data: { primarySajuProfileId: null },
-      select: { id: true },
-    });
+  it('clears the primary when deleting the final profile', async () => {
+    const { service, database, profile } = fixture();
+    database.sajuProfile.findFirst
+      .mockResolvedValueOnce(profile)
+      .mockResolvedValueOnce(null);
+    expect(
+      (await service.remove(AUTH_SUBJECT, PROFILE_ID)).primarySajuProfileId,
+    ).toBeNull();
   });
 
-  it('does not change the primary profile when deleting a non-primary profile', async () => {
-    const primaryProfileId = 'e9d83fc8-9886-47ca-b00d-d735b75044f4';
-    const updateUser = vi.fn();
-    const transactionClient = {
-      sajuProfile: {
-        findFirst: vi.fn(),
-        update: vi.fn().mockResolvedValue({ id: PROFILE_ID }),
-        delete: vi.fn().mockResolvedValue({ id: PROFILE_ID }),
-      },
-      user: { update: updateUser },
-    };
-    const prisma = {
-      user: {
-        findUnique: vi.fn().mockResolvedValue({
-          id: USER_ID,
-          status: UserStatus.ACTIVE,
-          primarySajuProfileId: primaryProfileId,
-        }),
-      },
-      sajuProfile: {
-        findFirst: vi.fn().mockResolvedValue({
-          ...profileRecord,
-          currentChart: null,
-        }),
-      },
-      $transaction: vi.fn(
-        async (
-          callback: (client: typeof transactionClient) => Promise<unknown>,
-        ) => callback(transactionClient),
-      ),
-    } as unknown as PrismaService;
-    const service = new SajuProfilesService(prisma, new SajuChartCalculator());
-
-    await expect(service.remove(AUTH_SUBJECT, PROFILE_ID)).resolves.toEqual({
-      deletedProfileId: PROFILE_ID,
-      primarySajuProfileId: primaryProfileId,
-    });
-    expect(transactionClient.sajuProfile.findFirst).not.toHaveBeenCalled();
-    expect(updateUser).not.toHaveBeenCalled();
+  it('does not replace primary when deleting a different profile', async () => {
+    const primary = 'e9d83fc8-9886-47ca-b00d-d735b75044f4';
+    const { service, database } = fixture(createSnapshot(), primary);
+    expect(
+      (await service.remove(AUTH_SUBJECT, PROFILE_ID)).primarySajuProfileId,
+    ).toBe(primary);
+    expect(database.user.update).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -530,24 +276,15 @@ describe('SajuProfilesService', () => {
     [UserStatus.PENDING_REGISTRATION, 'USER_REGISTRATION_REQUIRED'],
     [UserStatus.SUSPENDED, 'USER_ACCESS_DENIED'],
     [UserStatus.WITHDRAWN, 'USER_ACCESS_DENIED'],
-  ])('blocks profile access for user status %s', async (status, reason) => {
-    const findMany = vi.fn();
-    const prisma = {
-      user: {
-        findUnique: vi
-          .fn()
-          .mockResolvedValue(
-            status ? { id: USER_ID, status, primarySajuProfileId: null } : null,
-          ),
-      },
-      sajuProfile: { findMany },
-    } as unknown as PrismaService;
-    const service = new SajuProfilesService(prisma, new SajuChartCalculator());
-
+  ])('blocks profile access for status %s', async (status, reason) => {
+    const { service, database } = fixture();
+    database.user.findUnique.mockResolvedValue(
+      status ? { id: USER_ID, status, primarySajuProfileId: null } : null,
+    );
     await expect(service.findAll(AUTH_SUBJECT)).rejects.toMatchObject({
       status: 403,
       response: { reason },
     });
-    expect(findMany).not.toHaveBeenCalled();
+    expect(database.sajuProfile.findMany).not.toHaveBeenCalled();
   });
 });

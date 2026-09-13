@@ -7,6 +7,7 @@ export default defineConfig({
   test: {
     env: {
       NODE_ENV: 'test',
+      KASI_CALENDAR_VERIFICATION_ENABLED: 'false',
       DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/postgres',
       DIRECT_URL: 'postgresql://postgres:postgres@localhost:5432/postgres',
       SUPABASE_URL: 'https://example.supabase.co',

@@ -56,17 +56,18 @@ enum LuckCycleGender {
 }
 
 model User {
-  id                   String        @id @default(uuid()) @db.Uuid
-  authSubject          String        @unique @map("auth_subject") @db.Uuid
-  displayName          String?       @map("display_name") @db.VarChar(50)
-  status               UserStatus    @default(PENDING_REGISTRATION)
-  primarySajuProfileId String?       @unique @map("primary_saju_profile_id") @db.Uuid
-  createdAt            DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt            DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
-  withdrawnAt          DateTime?     @map("withdrawn_at") @db.Timestamptz(3)
+  id                   String                @id @default(uuid()) @db.Uuid
+  authSubject          String                @unique @map("auth_subject") @db.Uuid
+  displayName          String?               @map("display_name") @db.VarChar(50)
+  status               UserStatus            @default(PENDING_REGISTRATION)
+  primarySajuProfileId String?               @unique @map("primary_saju_profile_id") @db.Uuid
+  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+  withdrawnAt          DateTime?             @map("withdrawn_at") @db.Timestamptz(3)
   consents             UserConsent[]
-  primarySajuProfile   SajuProfile?  @relation("PrimarySajuProfile", fields: [primarySajuProfileId], references: [id], onDelete: SetNull)
-  sajuProfiles         SajuProfile[] @relation("OwnedSajuProfiles")
+  primarySajuProfile   SajuProfile?          @relation("PrimarySajuProfile", fields: [primarySajuProfileId], references: [id], onDelete: SetNull)
+  sajuProfiles         SajuProfile[]         @relation("OwnedSajuProfiles")
+  sajuProfileCreations SajuProfileCreation[]
 
   @@map("users")
 }
@@ -85,31 +86,47 @@ model UserConsent {
 }
 
 model SajuProfile {
-  id                 String             @id @default(uuid()) @db.Uuid
-  ownerUserId        String             @map("owner_user_id") @db.Uuid
-  displayName        String             @map("display_name") @db.VarChar(30)
-  relationType       SajuRelationType   @map("relation_type")
-  calendarType       SajuCalendarType   @map("calendar_type")
-  birthYear          Int                @map("birth_year") @db.SmallInt
-  birthMonth         Int                @map("birth_month") @db.SmallInt
-  birthDay           Int                @map("birth_day") @db.SmallInt
-  isLeapMonth        Boolean            @default(false) @map("is_leap_month")
-  birthTimePrecision BirthTimePrecision @map("birth_time_precision")
-  birthHour          Int?               @map("birth_hour") @db.SmallInt
-  birthMinute        Int?               @map("birth_minute") @db.SmallInt
-  luckCycleGender    LuckCycleGender    @map("luck_cycle_gender")
-  timezone           String             @default("Asia/Seoul") @db.VarChar(64)
-  currentChartId     String?            @unique @map("current_chart_id") @db.Uuid
-  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
-  deletedAt          DateTime?          @map("deleted_at") @db.Timestamptz(3)
-  owner              User               @relation("OwnedSajuProfiles", fields: [ownerUserId], references: [id], onDelete: Cascade)
-  primaryForUser     User?              @relation("PrimarySajuProfile")
-  charts             SajuChart[]        @relation("ProfileCharts")
-  currentChart       SajuChart?         @relation("CurrentSajuChart", fields: [currentChartId], references: [id], onDelete: SetNull)
+  id                 String                @id @default(uuid()) @db.Uuid
+  ownerUserId        String                @map("owner_user_id") @db.Uuid
+  displayName        String                @map("display_name") @db.VarChar(30)
+  relationType       SajuRelationType      @map("relation_type")
+  calendarType       SajuCalendarType      @map("calendar_type")
+  birthYear          Int                   @map("birth_year") @db.SmallInt
+  birthMonth         Int                   @map("birth_month") @db.SmallInt
+  birthDay           Int                   @map("birth_day") @db.SmallInt
+  isLeapMonth        Boolean               @default(false) @map("is_leap_month")
+  birthTimePrecision BirthTimePrecision    @map("birth_time_precision")
+  birthHour          Int?                  @map("birth_hour") @db.SmallInt
+  birthMinute        Int?                  @map("birth_minute") @db.SmallInt
+  luckCycleGender    LuckCycleGender       @map("luck_cycle_gender")
+  timezone           String                @default("Asia/Seoul") @db.VarChar(64)
+  currentChartId     String?               @unique @map("current_chart_id") @db.Uuid
+  createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt          DateTime?             @map("deleted_at") @db.Timestamptz(3)
+  owner              User                  @relation("OwnedSajuProfiles", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  primaryForUser     User?                 @relation("PrimarySajuProfile")
+  charts             SajuChart[]           @relation("ProfileCharts")
+  currentChart       SajuChart?            @relation("CurrentSajuChart", fields: [currentChartId], references: [id], onDelete: SetNull)
+  creationRequests   SajuProfileCreation[]
 
   @@index([ownerUserId, deletedAt])
   @@map("saju_profiles")
+}
+
+// Keeps a request tombstone after profile deletion without retaining birth data.
+model SajuProfileCreation {
+  ownerUserId String       @map("owner_user_id") @db.Uuid
+  requestKey  String       @map("request_key") @db.Uuid
+  requestHash String       @map("request_hash") @db.Char(64)
+  profileId   String?      @map("profile_id") @db.Uuid
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  owner       User         @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  profile     SajuProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+
+  @@id([ownerUserId, requestKey])
+  @@index([profileId])
+  @@map("saju_profile_creations")
 }
 
 model SajuChart {
@@ -128,4 +145,20 @@ model SajuChart {
   @@unique([profileId, inputHash])
   @@index([profileId, calculatedAt])
   @@map("saju_charts")
+}
+
+// Temporary recovery state. No FK: this must survive application user deletion.
+model AccountWithdrawal {
+  authSubject String   @id @map("auth_subject") @db.Uuid
+  kakaoUserId String   @map("kakao_user_id") @db.VarChar(20)
+  phase       String   @default("unlink_kakao") @db.VarChar(30)
+  attempts    Int      @default(0)
+  nextAttemptAt DateTime @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
+  leaseId     String?  @map("lease_id") @db.Uuid
+  leaseUntil  DateTime? @map("lease_until") @db.Timestamptz(3)
+  lastError   String?  @map("last_error") @db.VarChar(50)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([nextAttemptAt])
+  @@map("account_withdrawals")
 }

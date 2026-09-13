@@ -1,6 +1,12 @@
 import { type INestApplication, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { json, urlencoded } from 'express';
+import {
+  json,
+  urlencoded,
+  type Request,
+  type Response,
+  type NextFunction,
+} from 'express';
 import helmet from 'helmet';
 import {
   REQUEST_ID_HEADER,
@@ -15,6 +21,13 @@ export function configureApplication(
 ) {
   app.use(requestIdMiddleware);
   app.use(helmet());
+  app.use(
+    ['/v1/saju-profiles', '/v1/users/me', '/v1/readings'],
+    (_request: Request, response: Response, next: NextFunction) => {
+      response.setHeader('Cache-Control', 'no-store');
+      next();
+    },
+  );
   app.use(json({ limit: '100kb' }));
   app.use(urlencoded({ extended: true, limit: '100kb' }));
   app.enableCors({

@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto';
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -33,6 +35,7 @@ import {
   type UpdateSajuProfileData,
   type UpdateSajuProfileRequest,
 } from './saju-profile.contract.js';
+import { KOREAN_TIME_DATA_VERSION } from './korean-birth-time.js';
 
 const RELATION_TYPE_TO_PRISMA: Record<
   CreateSajuProfileRequest['relationType'],
@@ -116,6 +119,34 @@ type ProfileWithCurrentChartRecord = Prisma.SajuProfileGetPayload<{
   select: typeof SAJU_PROFILE_WITH_CURRENT_CHART_SELECT;
 }>;
 
+type ActiveUser = {
+  id: string;
+  status: PrismaUserStatus;
+  primarySajuProfileId: string | null;
+};
+
+function hashCreationRequest(request: CreateSajuProfileRequest): string {
+  const { birth } = request;
+  // Canonical field order; independent of JSON object property ordering.
+  return createHash('sha256')
+    .update(
+      JSON.stringify([
+        request.displayName,
+        request.relationType,
+        birth.calendarType,
+        birth.isLeapMonth,
+        birth.date.year,
+        birth.date.month,
+        birth.date.day,
+        birth.time.precision,
+        birth.time.precision === 'exact' ? birth.time.hour : null,
+        birth.time.precision === 'exact' ? birth.time.minute : null,
+        birth.luckCycleGender,
+      ]),
+    )
+    .digest('hex');
+}
+
 function toPrismaBirthData(birth: BirthInput) {
   return {
     calendarType: CALENDAR_TYPE_TO_PRISMA[birth.calendarType],
@@ -157,6 +188,44 @@ function hasSameBirth(profile: ProfileRecord, birth: BirthInput) {
 
 @Injectable()
 export class SajuProfilesService {
+  /** Public batch boundary: no caller can read another account's chart. */
+  async getOwnedReadingCharts(authSubject: string, chartIds: readonly string[]) {
+    const user = await this.getActiveUser(authSubject);
+    const charts = await this.prisma.sajuChart.findMany({
+      where: {
+        id: { in: [...chartIds] },
+        profile: {
+          ownerUserId: user.id,
+          deletedAt: null,
+          owner: { status: PrismaUserStatus.ACTIVE },
+        },
+      },
+      select: {
+        id: true,
+        profileId: true,
+        payload: true,
+        profile: { select: { displayName: true } },
+      },
+    });
+    if (charts.length !== chartIds.length) {
+      throw new NotFoundException({
+        message: '선택한 사주 정보를 찾을 수 없습니다.',
+        reason: 'SAJU_CHART_NOT_FOUND',
+      });
+    }
+    if (new Set(charts.map((chart) => chart.profileId)).size !== charts.length) {
+      throw new ConflictException({
+        message: '같은 사람의 차트는 한 번만 선택해주세요.',
+        reason: 'DUPLICATE_READING_PARTICIPANT',
+      });
+    }
+    return charts.map((chart) => ({
+      chartId: chart.id,
+      displayName: chart.profile.displayName,
+      snapshot: SajuChartSnapshotV1Schema.parse(chart.payload),
+    }));
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly calculator: SajuChartCalculator,
@@ -165,12 +234,56 @@ export class SajuProfilesService {
   async create(
     authSubject: string,
     request: CreateSajuProfileRequest,
+    requestKey?: string,
   ): Promise<CreateSajuProfileData> {
-    const user = await this.getActiveUser(authSubject);
-    const calculatedAt = new Date();
-    const calculation = this.calculator.calculate(request.birth, calculatedAt);
-
-    return this.prisma.$transaction(async (transaction) => {
+    return this.withOwnerTransaction(authSubject, async (transaction, user) => {
+      const requestHash = hashCreationRequest(request);
+      if (requestKey) {
+        const previous = await transaction.sajuProfileCreation.findUnique({
+          where: {
+            ownerUserId_requestKey: { ownerUserId: user.id, requestKey },
+          },
+          select: { requestHash: true, profileId: true },
+        });
+        if (previous) {
+          if (previous.requestHash !== requestHash) {
+            throw new ConflictException({
+              message: '같은 등록 요청 키로 다른 정보를 저장할 수 없습니다.',
+              reason: 'IDEMPOTENCY_KEY_REUSED',
+            });
+          }
+          if (!previous.profileId) {
+            throw new ConflictException({
+              message:
+                '이 요청으로 등록한 프로필은 삭제되었습니다. 새 등록을 시작해주세요.',
+              reason: 'SAJU_PROFILE_CREATION_DELETED',
+            });
+          }
+          const profile = await this.getOwnedProfile(
+            user.id,
+            previous.profileId,
+            transaction,
+          );
+          if (!profile.currentChart) {
+            throw new ConflictException({
+              message: '등록된 프로필의 만세력을 확인해주세요.',
+              reason: 'SAJU_PROFILE_CHART_UNAVAILABLE',
+            });
+          }
+          return {
+            profile: this.toSajuProfile(
+              profile,
+              user.primarySajuProfileId === profile.id,
+            ),
+            chart: this.toSajuChart(profile.currentChart),
+          };
+        }
+      }
+      const calculatedAt = new Date();
+      const calculation = this.calculator.calculate(
+        request.birth,
+        calculatedAt,
+      );
       const createdProfile = await transaction.sajuProfile.create({
         data: {
           ownerUserId: user.id,
@@ -188,7 +301,7 @@ export class SajuProfilesService {
           engineVersion: SAJU_ENGINE_VERSION,
           policyVersion: SAJU_POLICY_VERSION,
           inputHash: calculation.inputHash,
-          payload: calculation.snapshot as Prisma.InputJsonValue,
+          payload: calculation.snapshot,
           calculatedAt,
         },
         select: SAJU_CHART_SELECT,
@@ -206,6 +319,17 @@ export class SajuProfilesService {
         user.primarySajuProfileId === profile.id ||
         primaryAssignment.count === 1;
 
+      if (requestKey) {
+        await transaction.sajuProfileCreation.create({
+          data: {
+            ownerUserId: user.id,
+            requestKey,
+            requestHash,
+            profileId: profile.id,
+          },
+          select: { requestKey: true },
+        });
+      }
       return {
         profile: this.toSajuProfile(profile, isPrimary),
         chart: this.toSajuChart(chart),
@@ -217,7 +341,7 @@ export class SajuProfilesService {
     const user = await this.getActiveUser(authSubject);
     const profiles = await this.prisma.sajuProfile.findMany({
       where: { ownerUserId: user.id, deletedAt: null },
-      orderBy: { createdAt: 'asc' },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       select: SAJU_PROFILE_SELECT,
     });
 
@@ -246,52 +370,72 @@ export class SajuProfilesService {
     profileId: string,
     request: UpdateSajuProfileRequest,
   ): Promise<UpdateSajuProfileData> {
-    const user = await this.getActiveUser(authSubject);
-    const existingProfile = await this.getOwnedProfile(user.id, profileId);
-    const nextDisplayName = request.displayName ?? existingProfile.displayName;
-    const nextRelationType =
-      request.relationType ??
-      RELATION_TYPE_FROM_PRISMA[existingProfile.relationType];
-    const isDisplayNameChanged =
-      nextDisplayName !== existingProfile.displayName;
-    const isRelationTypeChanged =
-      RELATION_TYPE_TO_PRISMA[nextRelationType] !==
-      existingProfile.relationType;
-    const isBirthChanged =
-      request.birth !== undefined &&
-      !hasSameBirth(existingProfile, request.birth);
-    const nextBirth = request.birth;
-    const isPrimary = user.primarySajuProfileId === existingProfile.id;
-    const profileInfoUpdate = {
-      ...(isDisplayNameChanged ? { displayName: nextDisplayName } : {}),
-      ...(isRelationTypeChanged
-        ? { relationType: RELATION_TYPE_TO_PRISMA[nextRelationType] }
-        : {}),
-    };
-
-    if (!isDisplayNameChanged && !isRelationTypeChanged && !isBirthChanged) {
-      return this.toSajuProfileData(existingProfile, isPrimary);
-    }
-
-    if (!isBirthChanged || nextBirth === undefined) {
-      const profile = await this.prisma.sajuProfile.update({
-        where: { id: existingProfile.id },
-        data: profileInfoUpdate,
-        select: SAJU_PROFILE_SELECT,
-      });
-
-      return {
-        profile: this.toSajuProfile(profile, isPrimary),
-        chart: existingProfile.currentChart
-          ? this.toSajuChart(existingProfile.currentChart)
-          : null,
+    return this.withOwnerTransaction(authSubject, async (transaction, user) => {
+      const existingProfile = await this.getOwnedProfile(
+        user.id,
+        profileId,
+        transaction,
+      );
+      const nextDisplayName =
+        request.displayName ?? existingProfile.displayName;
+      const nextRelationType =
+        request.relationType ??
+        RELATION_TYPE_FROM_PRISMA[existingProfile.relationType];
+      const isDisplayNameChanged =
+        nextDisplayName !== existingProfile.displayName;
+      const isRelationTypeChanged =
+        RELATION_TYPE_TO_PRISMA[nextRelationType] !==
+        existingProfile.relationType;
+      const isBirthChanged =
+        request.birth !== undefined &&
+        !hasSameBirth(existingProfile, request.birth);
+      const nextBirth = request.birth;
+      const currentCalculation = existingProfile.currentChart
+        ? this.toSajuChart(existingProfile.currentChart).snapshot.calculation
+        : null;
+      // Submitting birth information also confirms the current calculation policy.
+      // Display-name/relation-only PATCH requests keep the immutable old chart.
+      const shouldRecalculate =
+        nextBirth !== undefined &&
+        (isBirthChanged ||
+          currentCalculation?.policyVersion !== SAJU_POLICY_VERSION ||
+          currentCalculation?.engineVersion !== SAJU_ENGINE_VERSION ||
+          currentCalculation?.timeZoneDatabaseVersion !==
+            KOREAN_TIME_DATA_VERSION);
+      const isPrimary = user.primarySajuProfileId === existingProfile.id;
+      const profileInfoUpdate = {
+        ...(isDisplayNameChanged ? { displayName: nextDisplayName } : {}),
+        ...(isRelationTypeChanged
+          ? { relationType: RELATION_TYPE_TO_PRISMA[nextRelationType] }
+          : {}),
       };
-    }
 
-    const calculatedAt = new Date();
-    const calculation = this.calculator.calculate(nextBirth, calculatedAt);
+      if (
+        !isDisplayNameChanged &&
+        !isRelationTypeChanged &&
+        !shouldRecalculate
+      ) {
+        return this.toSajuProfileData(existingProfile, isPrimary);
+      }
 
-    return this.prisma.$transaction(async (transaction) => {
+      if (!shouldRecalculate || nextBirth === undefined) {
+        const profile = await transaction.sajuProfile.update({
+          where: { id: existingProfile.id },
+          data: profileInfoUpdate,
+          select: SAJU_PROFILE_SELECT,
+        });
+
+        return {
+          profile: this.toSajuProfile(profile, isPrimary),
+          chart: existingProfile.currentChart
+            ? this.toSajuChart(existingProfile.currentChart)
+            : null,
+        };
+      }
+
+      const calculatedAt = new Date();
+      const calculation = this.calculator.calculate(nextBirth, calculatedAt);
+
       const chart = await transaction.sajuChart.upsert({
         where: {
           profileId_inputHash: {
@@ -307,7 +451,7 @@ export class SajuProfilesService {
           engineVersion: SAJU_ENGINE_VERSION,
           policyVersion: SAJU_POLICY_VERSION,
           inputHash: calculation.inputHash,
-          payload: calculation.snapshot as Prisma.InputJsonValue,
+          payload: calculation.snapshot,
           calculatedAt,
         },
         select: SAJU_CHART_SELECT,
@@ -333,10 +477,12 @@ export class SajuProfilesService {
     authSubject: string,
     profileId: string,
   ): Promise<DeleteSajuProfileData> {
-    const user = await this.getActiveUser(authSubject);
-    const profile = await this.getOwnedProfile(user.id, profileId);
-
-    return this.prisma.$transaction(async (transaction) => {
+    return this.withOwnerTransaction(authSubject, async (transaction, user) => {
+      const profile = await this.getOwnedProfile(
+        user.id,
+        profileId,
+        transaction,
+      );
       let primarySajuProfileId = user.primarySajuProfileId;
 
       if (user.primarySajuProfileId === profile.id) {
@@ -346,7 +492,7 @@ export class SajuProfilesService {
             id: { not: profile.id },
             deletedAt: null,
           },
-          orderBy: { createdAt: 'asc' },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
           select: { id: true },
         });
 
@@ -375,8 +521,32 @@ export class SajuProfilesService {
     });
   }
 
-  private async getActiveUser(authSubject: string) {
-    const user = await this.prisma.user.findUnique({
+  private async withOwnerTransaction<T>(
+    authSubject: string,
+    work: (
+      transaction: Prisma.TransactionClient,
+      user: ActiveUser,
+    ) => Promise<T>,
+  ): Promise<T> {
+    return this.prisma.$transaction(
+      async (transaction) => {
+        // All profile writes take the same per-owner lock before reading state.
+        // This also serializes first-profile assignment and concurrent retries.
+        await transaction.$queryRaw`
+        SELECT id FROM users WHERE auth_subject = ${authSubject}::uuid FOR UPDATE
+      `;
+        const user = await this.getActiveUser(authSubject, transaction);
+        return work(transaction, user);
+      },
+      { maxWait: 5_000, timeout: 15_000 },
+    );
+  }
+
+  private async getActiveUser(
+    authSubject: string,
+    database: Prisma.TransactionClient = this.prisma,
+  ) {
+    const user = await database.user.findUnique({
       where: { authSubject },
       select: { id: true, status: true, primarySajuProfileId: true },
     });
@@ -401,8 +571,9 @@ export class SajuProfilesService {
   private async getOwnedProfile(
     ownerUserId: string,
     profileId: string,
+    database: Prisma.TransactionClient = this.prisma,
   ): Promise<ProfileWithCurrentChartRecord> {
-    const profile = await this.prisma.sajuProfile.findFirst({
+    const profile = await database.sajuProfile.findFirst({
       where: { id: profileId, ownerUserId, deletedAt: null },
       select: SAJU_PROFILE_WITH_CURRENT_CHART_SELECT,
     });

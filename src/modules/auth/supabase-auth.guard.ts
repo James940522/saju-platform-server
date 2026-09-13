@@ -34,6 +34,7 @@ export class SupabaseAuthGuard implements CanActivate {
     }
 
     request.authPrincipal = principal;
+    request.authAccessToken = accessToken;
     return true;
   }
 

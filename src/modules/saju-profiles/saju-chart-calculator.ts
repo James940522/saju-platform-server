@@ -8,6 +8,7 @@ import {
   getEarthlyBranchYinYang,
   getHeavenlyStemElement,
   getHeavenlyStemYinYang,
+  getSolarTermsOfYear,
   HEAVENLY_STEMS,
   HEAVENLY_STEMS_HANJA,
   isValidSolarDate,
@@ -25,11 +26,17 @@ import type {
   BirthInput,
   SajuChartSnapshotV1,
 } from './saju-profile.contract.js';
+import {
+  isBeforeKoreanStandardTime,
+  KOREAN_TIME_DATA_VERSION,
+  koreanCivilDateAt,
+  resolveKoreanBirthTime,
+} from './korean-birth-time.js';
 
 export const SAJU_CHART_SCHEMA_VERSION = 1;
 export const SAJU_ENGINE_NAME = 'manseryeok';
 export const SAJU_ENGINE_VERSION = '2.0.0';
-export const SAJU_POLICY_VERSION = 'kr-kst-midnight-v1';
+export const SAJU_POLICY_VERSION = 'kr-mean-solar-midnight-v2';
 export const SAJU_TIMEZONE = 'Asia/Seoul';
 
 const HEAVENLY_STEM_CODES: Record<
@@ -152,17 +159,6 @@ function toNatalPillar(
   };
 }
 
-function hasSameDatePillars(
-  first: FourPillarsDetail,
-  second: FourPillarsDetail,
-) {
-  return (['year', 'month', 'day'] as const).every(
-    (key) =>
-      first[key].heavenlyStem === second[key].heavenlyStem &&
-      first[key].earthlyBranch === second[key].earthlyBranch,
-  );
-}
-
 function getKoreaToday() {
   const koreaNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
 
@@ -199,13 +195,23 @@ export class SajuChartCalculator {
     }
 
     let result: FourPillarsDetail;
+    let resolvedTime: ReturnType<typeof resolveKoreanBirthTime>;
 
     try {
       if (birth.time.precision === 'unknown') {
-        const startOfDay = this.calculateWithTime(birth, 0, 0, false);
-        const endOfDay = this.calculateWithTime(birth, 23, 59, false);
-
-        if (!hasSameDatePillars(startOfDay, endOfDay)) {
+        const solarDate = normalizedDates.solarDate;
+        const hasSolarTermBoundary = getSolarTermsOfYear(solarDate.year).some(
+          (term) => {
+            if (term.index % 2 !== 0) return false;
+            const civilDate = koreanCivilDateAt(term.date);
+            return (
+              civilDate.year === solarDate.year &&
+              civilDate.month === solarDate.month &&
+              civilDate.day === solarDate.day
+            );
+          },
+        );
+        if (hasSolarTermBoundary) {
           throw new BadRequestException({
             message:
               '이 날짜는 출생 시각에 따라 원국이 달라져 시간을 모름으로 등록할 수 없습니다.',
@@ -213,14 +219,17 @@ export class SajuChartCalculator {
           });
         }
 
-        result = this.calculateWithTime(birth, 12, 0, false);
+        // Noon represents the supplied date only. Never expose it as a known
+        // birth time; corrected midnight can change the day for unknown time.
+        resolvedTime = resolveKoreanBirthTime(solarDate, 12, 0);
+        result = this.calculateWithTime(birth, resolvedTime, false);
       } else {
-        result = this.calculateWithTime(
-          birth,
+        resolvedTime = resolveKoreanBirthTime(
+          normalizedDates.solarDate,
           birth.time.hour,
           birth.time.minute,
-          true,
         );
+        result = this.calculateWithTime(birth, resolvedTime, true);
       }
     } catch (error: unknown) {
       if (error instanceof BadRequestException) {
@@ -238,6 +247,7 @@ export class SajuChartCalculator {
       normalizedDates,
       result,
       calculatedAt,
+      resolvedTime,
     );
     const inputHash = createHash('sha256')
       .update(
@@ -246,6 +256,7 @@ export class SajuChartCalculator {
           engine: SAJU_ENGINE_NAME,
           engineVersion: SAJU_ENGINE_VERSION,
           policyVersion: SAJU_POLICY_VERSION,
+          timeZoneDatabaseVersion: KOREAN_TIME_DATA_VERSION,
           birth,
           timezone: SAJU_TIMEZONE,
         }),
@@ -308,19 +319,19 @@ export class SajuChartCalculator {
 
   private calculateWithTime(
     birth: BirthInput,
-    hour: number,
-    minute: number,
+    resolvedTime: ReturnType<typeof resolveKoreanBirthTime>,
     includeLuckCycle: boolean,
   ) {
     return calculateFourPillars({
-      year: birth.date.year,
-      month: birth.date.month,
-      day: birth.date.day,
-      hour,
-      minute,
-      isLunar: birth.calendarType === 'lunar',
-      isLeapMonth: birth.isLeapMonth,
+      ...resolvedTime.libraryDateTime,
+      isLunar: false,
       dayBoundary: 'midnight',
+      trueSolarTime: {
+        longitude: 127.5,
+        applyEquationOfTime: false,
+        // Historical civil time was resolved above; do not apply it twice.
+        applyHistoricalDst: false,
+      },
       ...(includeLuckCycle ? { gender: birth.luckCycleGender } : {}),
     });
   }
@@ -330,8 +341,13 @@ export class SajuChartCalculator {
     normalizedDates: ReturnType<SajuChartCalculator['normalizeDates']>,
     result: FourPillarsDetail,
     calculatedAt: Date,
+    resolvedTime: ReturnType<typeof resolveKoreanBirthTime>,
   ): SajuChartSnapshotV1 {
     const isUnknownTime = birth.time.precision === 'unknown';
+    const isHistoricalTimeAssumed = isBeforeKoreanStandardTime(
+      normalizedDates.solarDate,
+    );
+    const corrected = resolvedTime.correctedDateTime;
     const includedPillars = isUnknownTime
       ? [result.year, result.month, result.day]
       : [result.year, result.month, result.day, result.hour];
@@ -353,12 +369,14 @@ export class SajuChartCalculator {
 
     return {
       schemaVersion: SAJU_CHART_SCHEMA_VERSION,
-      quality: isUnknownTime ? 'partial' : 'complete',
+      quality:
+        isUnknownTime || isHistoricalTimeAssumed ? 'partial' : 'complete',
       calculation: {
         engine: SAJU_ENGINE_NAME,
         engineVersion: SAJU_ENGINE_VERSION,
         policyVersion: SAJU_POLICY_VERSION,
         calculatedAt: calculatedAt.toISOString(),
+        timeZoneDatabaseVersion: KOREAN_TIME_DATA_VERSION,
       },
       normalizedBirth: {
         calendarType: birth.calendarType,
@@ -368,6 +386,27 @@ export class SajuChartCalculator {
         time: birth.time,
         luckCycleGender: birth.luckCycleGender,
         timezone: SAJU_TIMEZONE,
+        timeCorrection: {
+          method: 'korean_mean_solar',
+          referenceLongitude: 127.5,
+          equationOfTimeApplied: false,
+          civilUtcOffsetMinutes: isUnknownTime
+            ? null
+            : resolvedTime.civilUtcOffsetMinutes,
+          adjustmentMinutes: isUnknownTime
+            ? null
+            : resolvedTime.adjustmentMinutes,
+          correctedSolarDate: isUnknownTime
+            ? null
+            : {
+                year: corrected.year,
+                month: corrected.month,
+                day: corrected.day,
+              },
+          correctedTime: isUnknownTime
+            ? null
+            : { hour: corrected.hour, minute: corrected.minute },
+        },
       },
       pillars: {
         year: toNatalPillar(result.year, result.tenGods.year),
@@ -405,18 +444,34 @@ export class SajuChartCalculator {
                 ganji: toGanji(luckPillar.pillar),
               })),
             },
-      warnings: isUnknownTime
-        ? [
-            {
-              code: 'birth_time_unknown',
-              message: '출생 시각을 몰라 시주를 제외한 6자로 계산했습니다.',
-            },
-            {
-              code: 'luck_cycle_unavailable',
-              message: '출생 시각이 없어 대운 계산 결과를 제공하지 않습니다.',
-            },
-          ]
-        : [],
+      warnings: [
+        ...(isUnknownTime
+          ? [
+              {
+                code: 'birth_time_unknown' as const,
+                message: '출생 시각을 몰라 시주를 제외한 6자로 계산했습니다.',
+              },
+              {
+                code: 'luck_cycle_unavailable' as const,
+                message: '출생 시각이 없어 대운 계산 결과를 제공하지 않습니다.',
+              },
+              {
+                code: 'day_boundary_uncertain' as const,
+                message:
+                  '일주는 입력한 날짜를 기준으로 표시합니다. 자정 부근 출생이라면 한국시 보정으로 일주가 달라질 수 있습니다.',
+              },
+            ]
+          : []),
+        ...(isHistoricalTimeAssumed
+          ? [
+              {
+                code: 'historical_time_assumed' as const,
+                message:
+                  '1908년 4월 이전은 표준시 도입 전이므로 UTC+9를 가정했습니다. 정확한 출생지 시각을 반영한 결과가 아닙니다.',
+              },
+            ]
+          : []),
+      ],
     };
   }
 }

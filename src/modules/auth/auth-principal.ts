@@ -7,4 +7,5 @@ export type AuthPrincipal = {
 
 export type AuthenticatedRequest = Request & {
   authPrincipal: AuthPrincipal;
+  authAccessToken: string;
 };

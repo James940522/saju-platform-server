@@ -1,4 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import type { EnvironmentVariables } from '../../config/environment.schema.js';
 import type {
   GetReadingProductData,
   GetReadingProductsData,
@@ -34,6 +36,23 @@ function toReadingProductSummary(
 
 @Injectable()
 export class ReadingProductsService {
+  constructor(
+    @Inject(ConfigService)
+    private readonly config: ConfigService<EnvironmentVariables, true>,
+  ) {}
+
+  private withAvailability(product: ReadingProduct): ReadingProduct {
+    if (product.code !== 'wealth-ranking') return product;
+    const isEnabled = this.config.get('WEALTH_RANKING_ENABLED', {
+      infer: true,
+    });
+    const hasApiKey = Boolean(this.config.get('KIE_API_KEY', { infer: true }));
+    return {
+      ...product,
+      availability: isEnabled && hasApiKey ? 'active' : 'coming_soon',
+    };
+  }
+
   findAll(): GetReadingProductsData {
     return {
       products: READING_PRODUCTS.filter(
@@ -41,10 +60,14 @@ export class ReadingProductsService {
       )
         .sort(
           (left, right) =>
-            (readingProductDisplayOrder.get(left.code) ?? Number.MAX_SAFE_INTEGER) -
-            (readingProductDisplayOrder.get(right.code) ?? Number.MAX_SAFE_INTEGER),
+            (readingProductDisplayOrder.get(left.code) ??
+              Number.MAX_SAFE_INTEGER) -
+            (readingProductDisplayOrder.get(right.code) ??
+              Number.MAX_SAFE_INTEGER),
         )
-        .map(toReadingProductSummary),
+        .map((product) =>
+          toReadingProductSummary(this.withAvailability(product)),
+        ),
     };
   }
 
@@ -61,6 +84,6 @@ export class ReadingProductsService {
       });
     }
 
-    return { product };
+    return { product: this.withAvailability(product) };
   }
 }

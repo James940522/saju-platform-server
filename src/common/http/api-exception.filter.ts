@@ -96,11 +96,22 @@ export class ApiExceptionFilter implements ExceptionFilter {
     const exceptionResponse =
       exception instanceof HttpException ? exception.getResponse() : undefined;
     const payload = parseErrorPayload(exceptionResponse);
+    // Only expose this fixed public failure; arbitrary 5xx payloads remain private.
+    const publicServerError =
+      status === HttpStatus.SERVICE_UNAVAILABLE &&
+      payload.reason === 'ACCOUNT_WITHDRAWAL_UNAVAILABLE'
+        ? {
+            reason: 'ACCOUNT_WITHDRAWAL_UNAVAILABLE',
+            message:
+              '탈퇴 요청을 접수하지 못했어요. 잠시 후 다시 시도해주세요.',
+          }
+        : null;
     const message =
-      status < HttpStatus.INTERNAL_SERVER_ERROR &&
+      publicServerError?.message ??
+      (status < HttpStatus.INTERNAL_SERVER_ERROR &&
       typeof payload.message === 'string'
         ? payload.message
-        : getDefaultMessage(status);
+        : getDefaultMessage(status));
     const fieldErrors = parseFieldErrors(payload.fieldErrors);
     const reason =
       typeof payload.reason === 'string'
@@ -111,10 +122,10 @@ export class ApiExceptionFilter implements ExceptionFilter {
     response.setHeader(REQUEST_ID_HEADER, requestId);
 
     if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
-      const stack = exception instanceof Error ? exception.stack : undefined;
+      // Prisma error stacks can contain query arguments (including birth data).
+      // Keep the request ID for correlation without logging provider messages.
       this.logger.error(
-        `${request.method} ${request.originalUrl} failed`,
-        stack,
+        `${request.method} ${request.path} failed (requestId=${requestId}, status=${status})`,
       );
     }
 
@@ -123,7 +134,9 @@ export class ApiExceptionFilter implements ExceptionFilter {
       message,
       data:
         status >= HttpStatus.INTERNAL_SERVER_ERROR
-          ? null
+          ? publicServerError
+            ? { reason: publicServerError.reason }
+            : null
           : {
               reason,
               ...(fieldErrors ? { fieldErrors } : {}),

@@ -2,7 +2,7 @@ import { type INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import type { App } from 'supertest/types';
+import type { App } from 'supertest/types.js';
 import { z } from 'zod';
 import { AppModule } from './../src/app.module.js';
 import { configureApplication } from './../src/app.setup.js';
@@ -23,6 +23,7 @@ const OpenApiDocumentSchema = z.object({
     '/v1/users/me': z.unknown(),
     '/v1/users/me/registration': z.unknown(),
     '/v1/saju-profiles': z.unknown(),
+    '/v1/saju-charts/preview': z.object({ post: z.unknown() }),
     '/v1/saju-profiles/{profileId}': z.object({
       delete: z.unknown(),
       get: z.unknown(),
@@ -128,6 +129,54 @@ describe('Application (e2e)', () => {
       .expect(200);
 
     OpenApiDocumentSchema.parse(response.body);
+  });
+
+  it('publishes the optional creation key and permits its CORS preflight', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/openapi.json')
+      .expect(200);
+    const document = z
+      .object({
+        paths: z.object({
+          '/v1/saju-profiles': z.object({
+            post: z.object({
+              parameters: z.array(
+                z.object({
+                  name: z.string(),
+                  in: z.string(),
+                  required: z.boolean().optional(),
+                }),
+              ),
+              responses: z.record(z.string(), z.unknown()),
+            }),
+          }),
+        }),
+      })
+      .parse(response.body);
+    const post = document.paths['/v1/saju-profiles'].post;
+    expect(post.parameters).toContainEqual(
+      expect.objectContaining({
+        name: 'Idempotency-Key',
+        in: 'header',
+      }),
+    );
+    expect(
+      post.parameters.find((parameter) => parameter.name === 'Idempotency-Key')
+        ?.required,
+    ).not.toBe(true);
+    expect(post.responses).toHaveProperty('409');
+    const preflight = await request(app.getHttpServer())
+      .options('/v1/saju-profiles')
+      .set('Origin', 'http://localhost:3000')
+      .set('Access-Control-Request-Method', 'POST')
+      .set(
+        'Access-Control-Request-Headers',
+        'authorization,content-type,idempotency-key',
+      )
+      .expect(204);
+    expect(preflight.headers['access-control-allow-headers']).toContain(
+      'idempotency-key',
+    );
   });
 
   it('requires a Supabase access token for the current user API', async () => {

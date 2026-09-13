@@ -2,8 +2,11 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service.js';
+import { SupabaseAuthService } from '../auth/supabase-auth.service.js';
+import { lockAuthSubject } from './user-lock.js';
 import {
   UserStatus as PrismaUserStatus,
   UserConsentType,
@@ -29,7 +32,10 @@ const USER_STATUS_BY_PRISMA_STATUS: Record<PrismaUserStatus, UserStatus> = {
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auth: SupabaseAuthService,
+  ) {}
 
   async getCurrentUser(authSubject: string): Promise<CurrentUserData> {
     const user = await this.prisma.user.findUnique({
@@ -43,6 +49,13 @@ export class UsersService {
       });
     }
 
+    if (user.status === PrismaUserStatus.WITHDRAWN) {
+      throw new ForbiddenException({
+        message: '회원 탈퇴를 처리하고 있어요.',
+        reason: 'ACCOUNT_WITHDRAWAL_IN_PROGRESS',
+      });
+    }
+
     return { user: this.toAppUser(user) };
   }
 
@@ -50,54 +63,77 @@ export class UsersService {
     authSubject: string,
     displayName: string | null,
     _request: CompleteRegistrationRequest,
+    accessToken: string,
   ): Promise<CurrentUserData> {
-    const user = await this.prisma.$transaction(async (transaction) => {
-      const currentUser = await transaction.user.upsert({
-        where: { authSubject },
-        create: { authSubject, displayName },
-        update: {},
-      });
-
-      if (
-        currentUser.status === PrismaUserStatus.SUSPENDED ||
-        currentUser.status === PrismaUserStatus.WITHDRAWN
-      ) {
-        throw new ForbiddenException({
-          message: '현재 상태에서는 가입을 완료할 수 없습니다.',
-          reason: 'USER_REGISTRATION_NOT_ALLOWED',
+    const user = await this.prisma.$transaction(
+      async (transaction) => {
+        await lockAuthSubject(transaction, authSubject);
+        if (
+          await transaction.accountWithdrawal.findUnique({
+            where: { authSubject },
+          })
+        ) {
+          throw new ForbiddenException({
+            message: '회원 탈퇴를 처리하고 있어요.',
+            reason: 'ACCOUNT_WITHDRAWAL_IN_PROGRESS',
+          });
+        }
+        // A previously authenticated request must not recreate a deleted account.
+        const principal = await this.auth.verifyAccessToken(accessToken);
+        if (principal?.subject !== authSubject) {
+          throw new UnauthorizedException({
+            message: '로그인이 필요합니다.',
+            reason: 'AUTHENTICATION_REQUIRED',
+          });
+        }
+        const currentUser = await transaction.user.upsert({
+          where: { authSubject },
+          create: { authSubject, displayName },
+          update: {},
         });
-      }
 
-      if (currentUser.status === PrismaUserStatus.ACTIVE) {
-        return currentUser;
-      }
+        if (
+          currentUser.status === PrismaUserStatus.SUSPENDED ||
+          currentUser.status === PrismaUserStatus.WITHDRAWN
+        ) {
+          throw new ForbiddenException({
+            message: '현재 상태에서는 가입을 완료할 수 없습니다.',
+            reason: 'USER_REGISTRATION_NOT_ALLOWED',
+          });
+        }
 
-      await transaction.userConsent.createMany({
-        data: [
-          {
-            userId: currentUser.id,
-            type: UserConsentType.TERMS_OF_SERVICE,
-            version: CURRENT_TERMS_VERSION,
-          },
-          {
-            userId: currentUser.id,
-            type: UserConsentType.PRIVACY_POLICY,
-            version: CURRENT_PRIVACY_POLICY_VERSION,
-          },
-          {
-            userId: currentUser.id,
-            type: UserConsentType.AGE_REQUIREMENT,
-            version: CURRENT_AGE_REQUIREMENT_VERSION,
-          },
-        ],
-        skipDuplicates: true,
-      });
+        if (currentUser.status === PrismaUserStatus.ACTIVE) {
+          return currentUser;
+        }
 
-      return transaction.user.update({
-        where: { id: currentUser.id },
-        data: { status: PrismaUserStatus.ACTIVE },
-      });
-    });
+        await transaction.userConsent.createMany({
+          data: [
+            {
+              userId: currentUser.id,
+              type: UserConsentType.TERMS_OF_SERVICE,
+              version: CURRENT_TERMS_VERSION,
+            },
+            {
+              userId: currentUser.id,
+              type: UserConsentType.PRIVACY_POLICY,
+              version: CURRENT_PRIVACY_POLICY_VERSION,
+            },
+            {
+              userId: currentUser.id,
+              type: UserConsentType.AGE_REQUIREMENT,
+              version: CURRENT_AGE_REQUIREMENT_VERSION,
+            },
+          ],
+          skipDuplicates: true,
+        });
+
+        return transaction.user.update({
+          where: { id: currentUser.id },
+          data: { status: PrismaUserStatus.ACTIVE },
+        });
+      },
+      { timeout: 15_000 },
+    );
 
     return { user: this.toAppUser(user) };
   }

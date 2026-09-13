@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -22,6 +23,7 @@ import {
   GetSajuProfileDataSchema,
   GetSajuProfilesDataSchema,
   SajuProfileParamsSchema,
+  SajuProfileCreationKeySchema,
   UpdateSajuProfileDataSchema,
   UpdateSajuProfileRequestSchema,
   type CreateSajuProfileData,
@@ -34,6 +36,7 @@ import {
   type UpdateSajuProfileRequest,
 } from './saju-profile.contract.js';
 import { SajuProfilesService } from './saju-profiles.service.js';
+import { SajuChartPreviewRateLimitGuard } from './saju-chart-preview-rate-limit.guard.js';
 
 @Controller({ path: 'saju-profiles', version: '1' })
 @UseGuards(SupabaseAuthGuard)
@@ -41,6 +44,7 @@ export class SajuProfilesController {
   constructor(private readonly sajuProfilesService: SajuProfilesService) {}
 
   @Post()
+  @UseGuards(SajuChartPreviewRateLimitGuard)
   @HttpCode(HttpStatus.CREATED)
   @ResponseContract({
     message: '사주 프로필을 등록했습니다.',
@@ -50,8 +54,12 @@ export class SajuProfilesController {
     @CurrentAuthPrincipal() principal: AuthPrincipal,
     @Body(new ZodValidationPipe(CreateSajuProfileRequestSchema))
     request: CreateSajuProfileRequest,
+    @Headers('idempotency-key') requestKey: unknown,
   ): Promise<CreateSajuProfileData> {
-    return this.sajuProfilesService.create(principal.subject, request);
+    const key = new ZodValidationPipe(SajuProfileCreationKeySchema).transform(
+      requestKey,
+    );
+    return this.sajuProfilesService.create(principal.subject, request, key);
   }
 
   @Get()
@@ -82,6 +90,7 @@ export class SajuProfilesController {
   }
 
   @Patch(':profileId')
+  @UseGuards(SajuChartPreviewRateLimitGuard)
   @ResponseContract({
     message: '사주 프로필을 수정했습니다.',
     schema: UpdateSajuProfileDataSchema,

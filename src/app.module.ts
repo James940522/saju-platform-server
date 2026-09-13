@@ -9,10 +9,12 @@ import { HealthModule } from './modules/health/health.module.js';
 import { ReadingProductsModule } from './modules/reading-products/reading-products.module.js';
 import { SajuProfilesModule } from './modules/saju-profiles/saju-profiles.module.js';
 import { UsersModule } from './modules/users/users.module.js';
+import { ReadingsModule } from './modules/readings/readings.module.js';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
+      envFilePath: '.env',
       cache: true,
       isGlobal: true,
       validate: validateEnvironment,
@@ -20,6 +22,7 @@ import { UsersModule } from './modules/users/users.module.js';
     DatabaseModule,
     HealthModule,
     ReadingProductsModule,
+    ReadingsModule,
     SajuProfilesModule,
     UsersModule,
   ],

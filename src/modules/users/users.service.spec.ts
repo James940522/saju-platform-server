@@ -1,3 +1,5 @@
+import { ConfigService } from '@nestjs/config';
+import { SupabaseAuthService } from '../auth/supabase-auth.service.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import {
   UserConsentType,
@@ -28,6 +30,18 @@ const prismaUser: PrismaUser = {
 };
 
 describe('UsersService', () => {
+  const auth = new SupabaseAuthService(
+    new ConfigService({
+      SUPABASE_URL: 'https://example.supabase.co',
+      SUPABASE_PUBLISHABLE_KEY: 'test-key',
+    }),
+  );
+  beforeEach(() => {
+    vi.spyOn(auth, 'verifyAccessToken').mockResolvedValue({
+      subject: AUTH_SUBJECT,
+      displayName: null,
+    });
+  });
   it('returns the current app user without creating one', async () => {
     const findUnique = vi.fn().mockResolvedValue(prismaUser);
     const prisma = {
@@ -35,7 +49,7 @@ describe('UsersService', () => {
         findUnique,
       },
     } as unknown as PrismaService;
-    const service = new UsersService(prisma);
+    const service = new UsersService(prisma, auth);
 
     await expect(service.getCurrentUser(AUTH_SUBJECT)).resolves.toEqual({
       user: {
@@ -58,7 +72,7 @@ describe('UsersService', () => {
         findUnique: vi.fn().mockResolvedValue(null),
       },
     } as unknown as PrismaService;
-    const service = new UsersService(prisma);
+    const service = new UsersService(prisma, auth);
 
     await expect(service.getCurrentUser(AUTH_SUBJECT)).rejects.toMatchObject({
       status: 404,
@@ -75,6 +89,8 @@ describe('UsersService', () => {
     const createMany = vi.fn().mockResolvedValue({ count: 3 });
     const update = vi.fn().mockResolvedValue(activeUser);
     const transactionClient = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      accountWithdrawal: { findUnique: vi.fn().mockResolvedValue(null) },
       user: { upsert, update },
       userConsent: { createMany },
     };
@@ -84,13 +100,14 @@ describe('UsersService', () => {
       ) => callback(transactionClient),
     );
     const prisma = { $transaction: transaction } as unknown as PrismaService;
-    const service = new UsersService(prisma);
+    const service = new UsersService(prisma, auth);
 
     await expect(
       service.completeRegistration(
         AUTH_SUBJECT,
         '카카오 사용자',
         REGISTRATION_REQUEST,
+        'test-token',
       ),
     ).resolves.toEqual({
       user: {
@@ -145,6 +162,8 @@ describe('UsersService', () => {
     const createMany = vi.fn();
     const update = vi.fn();
     const transactionClient = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      accountWithdrawal: { findUnique: vi.fn().mockResolvedValue(null) },
       user: { upsert, update },
       userConsent: { createMany },
     };
@@ -154,13 +173,14 @@ describe('UsersService', () => {
       ) => callback(transactionClient),
     );
     const prisma = { $transaction: transaction } as unknown as PrismaService;
-    const service = new UsersService(prisma);
+    const service = new UsersService(prisma, auth);
 
     await expect(
       service.completeRegistration(
         AUTH_SUBJECT,
         '카카오 사용자',
         REGISTRATION_REQUEST,
+        'test-token',
       ),
     ).resolves.toEqual({
       user: {
@@ -181,6 +201,8 @@ describe('UsersService', () => {
     async (status) => {
       const upsert = vi.fn().mockResolvedValue({ ...prismaUser, status });
       const transactionClient = {
+        $queryRaw: vi.fn().mockResolvedValue([]),
+        accountWithdrawal: { findUnique: vi.fn().mockResolvedValue(null) },
         user: { upsert, update: vi.fn() },
         userConsent: { createMany: vi.fn() },
       };
@@ -190,13 +212,14 @@ describe('UsersService', () => {
         ) => callback(transactionClient),
       );
       const prisma = { $transaction: transaction } as unknown as PrismaService;
-      const service = new UsersService(prisma);
+      const service = new UsersService(prisma, auth);
 
       await expect(
         service.completeRegistration(
           AUTH_SUBJECT,
           '카카오 사용자',
           REGISTRATION_REQUEST,
+          'test-token',
         ),
       ).rejects.toMatchObject({
         status: 403,

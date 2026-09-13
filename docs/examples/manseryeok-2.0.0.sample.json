@@ -1,0 +1,236 @@
+{
+  "engine": "manseryeok",
+  "engineVersion": "2.0.0",
+  "input": {
+    "year": 1992,
+    "month": 10,
+    "day": 24,
+    "hour": 5,
+    "minute": 30,
+    "gender": "male",
+    "dayBoundary": "midnight"
+  },
+  "functionKeys": [
+    "toString",
+    "toObject",
+    "toHanjaObject",
+    "toHanjaString"
+  ],
+  "serializedResult": {
+    "year": {
+      "heavenlyStem": "임",
+      "earthlyBranch": "신"
+    },
+    "month": {
+      "heavenlyStem": "경",
+      "earthlyBranch": "술"
+    },
+    "day": {
+      "heavenlyStem": "계",
+      "earthlyBranch": "유"
+    },
+    "hour": {
+      "heavenlyStem": "을",
+      "earthlyBranch": "묘"
+    },
+    "yearElement": {
+      "stem": "수",
+      "branch": "금"
+    },
+    "monthElement": {
+      "stem": "금",
+      "branch": "토"
+    },
+    "dayElement": {
+      "stem": "수",
+      "branch": "금"
+    },
+    "hourElement": {
+      "stem": "목",
+      "branch": "목"
+    },
+    "yearYinYang": {
+      "stem": "양",
+      "branch": "양"
+    },
+    "monthYinYang": {
+      "stem": "양",
+      "branch": "양"
+    },
+    "dayYinYang": {
+      "stem": "음",
+      "branch": "음"
+    },
+    "hourYinYang": {
+      "stem": "음",
+      "branch": "음"
+    },
+    "yearString": "임신",
+    "monthString": "경술",
+    "dayString": "계유",
+    "hourString": "을묘",
+    "yearHanja": "壬申",
+    "monthHanja": "庚戌",
+    "dayHanja": "癸酉",
+    "hourHanja": "乙卯",
+    "tenGods": {
+      "year": {
+        "stem": "겁재",
+        "branch": "정인"
+      },
+      "month": {
+        "stem": "정인",
+        "branch": "정관"
+      },
+      "day": {
+        "stem": "일간",
+        "branch": "편인"
+      },
+      "hour": {
+        "stem": "식신",
+        "branch": "식신"
+      }
+    },
+    "voidBranches": [
+      "술",
+      "해"
+    ],
+    "luckPillars": {
+      "forward": true,
+      "startAge": 5,
+      "startYears": 4,
+      "startMonths": 9,
+      "startDays": 7,
+      "pillars": [
+        {
+          "age": 5,
+          "pillar": {
+            "heavenlyStem": "신",
+            "earthlyBranch": "해"
+          },
+          "korean": "신해"
+        },
+        {
+          "age": 15,
+          "pillar": {
+            "heavenlyStem": "임",
+            "earthlyBranch": "자"
+          },
+          "korean": "임자"
+        },
+        {
+          "age": 25,
+          "pillar": {
+            "heavenlyStem": "계",
+            "earthlyBranch": "축"
+          },
+          "korean": "계축"
+        },
+        {
+          "age": 35,
+          "pillar": {
+            "heavenlyStem": "갑",
+            "earthlyBranch": "인"
+          },
+          "korean": "갑인"
+        },
+        {
+          "age": 45,
+          "pillar": {
+            "heavenlyStem": "을",
+            "earthlyBranch": "묘"
+          },
+          "korean": "을묘"
+        },
+        {
+          "age": 55,
+          "pillar": {
+            "heavenlyStem": "병",
+            "earthlyBranch": "진"
+          },
+          "korean": "병진"
+        },
+        {
+          "age": 65,
+          "pillar": {
+            "heavenlyStem": "정",
+            "earthlyBranch": "사"
+          },
+          "korean": "정사"
+        },
+        {
+          "age": 75,
+          "pillar": {
+            "heavenlyStem": "무",
+            "earthlyBranch": "오"
+          },
+          "korean": "무오"
+        },
+        {
+          "age": 85,
+          "pillar": {
+            "heavenlyStem": "기",
+            "earthlyBranch": "미"
+          },
+          "korean": "기미"
+        },
+        {
+          "age": 95,
+          "pillar": {
+            "heavenlyStem": "경",
+            "earthlyBranch": "신"
+          },
+          "korean": "경신"
+        }
+      ]
+    }
+  },
+  "toObject": {
+    "year": "임신",
+    "month": "경술",
+    "day": "계유",
+    "hour": "을묘"
+  },
+  "toHanjaObject": {
+    "year": {
+      "korean": "임신",
+      "hanja": "壬申"
+    },
+    "month": {
+      "korean": "경술",
+      "hanja": "庚戌"
+    },
+    "day": {
+      "korean": "계유",
+      "hanja": "癸酉"
+    },
+    "hour": {
+      "korean": "을묘",
+      "hanja": "乙卯"
+    }
+  },
+  "calendar": {
+    "solarToLunar": {
+      "year": 1992,
+      "month": 9,
+      "day": 29,
+      "isLeapMonth": false
+    },
+    "lunarLeapMonthToSolar": {
+      "input": {
+        "year": 2023,
+        "month": 2,
+        "day": 1,
+        "isLeapMonth": true
+      },
+      "output": {
+        "year": 2023,
+        "month": 3,
+        "day": 22
+      }
+    }
+  },
+  "withoutGender": {
+    "hasLuckPillars": false
+  }
+}

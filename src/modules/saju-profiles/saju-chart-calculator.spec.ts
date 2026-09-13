@@ -28,7 +28,7 @@ describe('SajuChartCalculator', () => {
       calculation: {
         engine: 'manseryeok',
         engineVersion: '2.0.0',
-        policyVersion: 'kr-kst-midnight-v1',
+        policyVersion: 'kr-mean-solar-midnight-v2',
         calculatedAt: CALCULATED_AT.toISOString(),
       },
       normalizedBirth: {
@@ -102,6 +102,7 @@ describe('SajuChartCalculator', () => {
     expect(result.snapshot.warnings.map((warning) => warning.code)).toEqual([
       'birth_time_unknown',
       'luck_cycle_unavailable',
+      'day_boundary_uncertain',
     ]);
   });
 
@@ -138,4 +139,52 @@ describe('SajuChartCalculator', () => {
       }),
     );
   });
+
+  it.each([
+    { minute: 26, year: '계묘', month: '을축' },
+    { minute: 28, year: '갑진', month: '병인' },
+  ])(
+    'applies the solar-term boundary at 2024-02-04 17:$minute KST',
+    ({ minute, year, month }) => {
+      const { snapshot } = calculator.calculate(
+        {
+          calendarType: 'solar',
+          isLeapMonth: false,
+          date: { year: 2024, month: 2, day: 4 },
+          time: { precision: 'exact', hour: 17, minute },
+          luckCycleGender: 'male',
+        },
+        CALCULATED_AT,
+      );
+      expect(snapshot.pillars).toMatchObject({
+        year: { korean: year },
+        month: { korean: month },
+      });
+    },
+  );
+
+  it.each([
+    { day: 10, hour: 23, minute: 30, dayPillar: '계유', hourPillar: '임자' },
+    { day: 11, hour: 0, minute: 0, dayPillar: '계유', hourPillar: '임자' },
+    { day: 11, hour: 0, minute: 29, dayPillar: '계유', hourPillar: '임자' },
+    { day: 11, hour: 0, minute: 30, dayPillar: '갑술', hourPillar: '갑자' },
+  ])(
+    'uses the midnight day boundary for March $day at $hour:$minute',
+    ({ day, hour, minute, dayPillar, hourPillar }) => {
+      const { snapshot } = calculator.calculate(
+        {
+          calendarType: 'solar',
+          isLeapMonth: false,
+          date: { year: 2024, month: 3, day },
+          time: { precision: 'exact', hour, minute },
+          luckCycleGender: 'male',
+        },
+        CALCULATED_AT,
+      );
+      expect(snapshot.pillars).toMatchObject({
+        day: { korean: dayPillar },
+        hour: { korean: hourPillar },
+      });
+    },
+  );
 });
