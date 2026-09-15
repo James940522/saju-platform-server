@@ -68,6 +68,8 @@ model User {
   primarySajuProfile   SajuProfile?          @relation("PrimarySajuProfile", fields: [primarySajuProfileId], references: [id], onDelete: SetNull)
   sajuProfiles         SajuProfile[]         @relation("OwnedSajuProfiles")
   sajuProfileCreations SajuProfileCreation[]
+  readingJobs          ReadingJob[]
+  readingRequests      ReadingRequest[]
 
   @@map("users")
 }
@@ -141,10 +143,62 @@ model SajuChart {
   calculatedAt  DateTime     @map("calculated_at") @db.Timestamptz(3)
   profile       SajuProfile  @relation("ProfileCharts", fields: [profileId], references: [id], onDelete: Cascade)
   currentFor    SajuProfile? @relation("CurrentSajuChart")
+  readingParticipants ReadingJobParticipant[]
 
   @@unique([profileId, inputHash])
   @@index([profileId, calculatedAt])
   @@map("saju_charts")
+}
+
+model ReadingJob {
+  id          String @id @default(uuid()) @db.Uuid
+  ownerUserId String @map("owner_user_id") @db.Uuid
+  productCode String @map("product_code") @db.VarChar(50)
+  status      String @default("queued") @db.VarChar(20)
+  stage       String @default("queued") @db.VarChar(20)
+  requestId   String @map("request_id") @db.VarChar(128)
+  result      Json? @db.JsonB
+  errorReason String? @map("error_reason") @db.VarChar(60)
+  leaseId     String? @map("lease_id") @db.Uuid
+  leaseUntil  DateTime? @map("lease_until") @db.Timestamptz(3)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  startedAt   DateTime? @map("started_at") @db.Timestamptz(3)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(3)
+  owner       User @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  participants ReadingJobParticipant[]
+  requests    ReadingRequest[]
+
+  @@index([status, createdAt])
+  @@index([ownerUserId, createdAt, id])
+  @@map("reading_jobs")
+}
+
+model ReadingJobParticipant {
+  jobId String @map("job_id") @db.Uuid
+  chartId String @map("chart_id") @db.Uuid
+  position Int @db.SmallInt
+  job ReadingJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  chart SajuChart @relation(fields: [chartId], references: [id], onDelete: Restrict)
+
+  @@id([jobId, chartId])
+  @@unique([jobId, position])
+  @@index([chartId])
+  @@map("reading_job_participants")
+}
+
+// Keep only a hash after related profile/job deletion; replay cannot recreate it.
+model ReadingRequest {
+  ownerUserId String @map("owner_user_id") @db.Uuid
+  requestKey String @map("request_key") @db.Uuid
+  requestHash String @map("request_hash") @db.Char(64)
+  jobId String? @map("job_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  owner User @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  job ReadingJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  @@id([ownerUserId, requestKey])
+  @@index([jobId])
+  @@map("reading_requests")
 }
 
 // Temporary recovery state. No FK: this must survive application user deletion.

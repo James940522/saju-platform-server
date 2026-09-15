@@ -1,0 +1,292 @@
+// Archived 2026-09-14: disabled server reference implementation.
+// Original lines follow, each prefixed with // .
+// import type { SajuChartSnapshotV1 } from '../saju-profiles/index.js';
+// import type { buildSajuReadingFacts } from './saju-reading-facts.js';
+// 
+// type Element = SajuChartSnapshotV1['dayMaster']['element'];
+// type TenGod = Exclude<
+//   SajuChartSnapshotV1['pillars']['day']['tenGods']['stem'],
+//   'day_master'
+// >;
+// type ReadingFacts = ReturnType<typeof buildSajuReadingFacts>;
+// 
+// export const FORTUNETELLER_ANALYSIS_VERSION = 'fortuneteller-reference-v1';
+// 
+// const GENERATES: Record<Element, Element> = {
+//   wood: 'fire',
+//   fire: 'earth',
+//   earth: 'metal',
+//   metal: 'water',
+//   water: 'wood',
+// };
+// const CONTROLS: Record<Element, Element> = {
+//   wood: 'earth',
+//   fire: 'metal',
+//   earth: 'water',
+//   metal: 'wood',
+//   water: 'fire',
+// };
+// const RESOURCE: Record<Element, Element> = {
+//   wood: 'water',
+//   fire: 'wood',
+//   earth: 'fire',
+//   metal: 'earth',
+//   water: 'metal',
+// };
+// const TEN_GOD_NAMES: Record<TenGod, string> = {
+//   bi_gyeon: '비견',
+//   geop_jae: '겁재',
+//   sik_sin: '식신',
+//   sang_gwan: '상관',
+//   pyeon_jae: '편재',
+//   jeong_jae: '정재',
+//   pyeon_gwan: '편관',
+//   jeong_gwan: '정관',
+//   pyeon_in: '편인',
+//   jeong_in: '정인',
+// };
+// 
+// // Independently implemented, reviewed rules on the one saved chart. See
+// // docs/fortuneteller-analysis.md for the pinned source and deliberate deviations.
+// // Counts below are exposed stems + branch principal stems, never hidden weights.
+// export function analyzeFortunetellerReference(
+//   snapshot: SajuChartSnapshotV1,
+//   participantKey: string,
+//   derived: ReadingFacts,
+// ) {
+//   const pillars = (['year', 'month', 'day', 'hour'] as const).flatMap(
+//     (position) => {
+//       const pillar = snapshot.pillars[position];
+//       return pillar ? [{ position, pillar }] : [];
+//     },
+//   );
+//   const occurrences = pillars.flatMap(({ position, pillar }) =>
+//     (['stem', 'branch'] as const).flatMap((symbol) => {
+//       const god = pillar.tenGods[symbol];
+//       if ((position === 'day' && symbol === 'stem') || god === 'day_master')
+//         return [];
+//       return [{ id: `${participantKey}.${position}.${symbol}`, god }];
+//     }),
+//   );
+//   const counts: Record<TenGod, number> = {
+//     bi_gyeon: 0,
+//     geop_jae: 0,
+//     sik_sin: 0,
+//     sang_gwan: 0,
+//     pyeon_jae: 0,
+//     jeong_jae: 0,
+//     pyeon_gwan: 0,
+//     jeong_gwan: 0,
+//     pyeon_in: 0,
+//     jeong_in: 0,
+//   };
+//   for (const { god } of occurrences) counts[god] += 1;
+//   const evidenceFor = (...gods: TenGod[]) =>
+//     occurrences.filter(({ god }) => gods.includes(god)).map(({ id }) => id);
+// 
+//   const dayElement = snapshot.dayMaster.element;
+//   const monthElement = snapshot.pillars.month.branch.element;
+//   const monthRelationship =
+//     monthElement === dayElement
+//       ? 'same_element'
+//       : GENERATES[monthElement] === dayElement
+//         ? 'generates_day_master'
+//         : CONTROLS[monthElement] === dayElement
+//           ? 'controls_day_master'
+//           : GENERATES[dayElement] === monthElement
+//             ? 'day_master_generates'
+//             : 'day_master_controls';
+//   // The reference uses +20 for both generating and neutral months. Preserve
+//   // that method explicitly instead of presenting it as an astronomical fact.
+//   const monthPoints =
+//     monthRelationship === 'same_element'
+//       ? 40
+//       : monthRelationship === 'controls_day_master'
+//         ? -20
+//         : 20;
+//   const peerCount = counts.bi_gyeon + counts.geop_jae;
+//   const resourceCount = counts.jeong_in + counts.pyeon_in;
+//   const drainingCount =
+//     counts.jeong_jae +
+//     counts.pyeon_jae +
+//     counts.jeong_gwan +
+//     counts.pyeon_gwan +
+//     counts.sik_sin +
+//     counts.sang_gwan;
+//   const peerPoints =
+//     peerCount >= 4 ? 25 : peerCount >= 2 ? 15 : peerCount === 1 ? 5 : -10;
+//   const resourcePoints =
+//     resourceCount >= 3
+//       ? 20
+//       : resourceCount === 2
+//         ? 15
+//         : resourceCount === 1
+//           ? 5
+//           : 0;
+//   const drainingPoints = drainingCount >= 6 ? -15 : drainingCount >= 4 ? -5 : 0;
+//   const estimate = Math.max(
+//     0,
+//     Math.min(
+//       100,
+//       50 + monthPoints + peerPoints + resourcePoints + drainingPoints,
+//     ),
+//   );
+//   const level =
+//     estimate >= 80
+//       ? 'very_strong'
+//       : estimate >= 65
+//         ? 'strong'
+//         : estimate >= 40
+//           ? 'medium'
+//           : estimate >= 25
+//             ? 'weak'
+//             : 'very_weak';
+//   const hasHour = snapshot.pillars.hour !== null;
+//   const dayMasterStrength = hasHour
+//     ? {
+//         method: 'month_and_principal_ten_gods' as const,
+//         level,
+//         heuristicScore: estimate,
+//         components: {
+//           base: 50,
+//           monthPoints,
+//           peerPoints,
+//           resourcePoints,
+//           drainingPoints,
+//         },
+//         evidenceIds: [
+//           `${participantKey}.day.stem`,
+//           ...occurrences.map(({ id }) => id),
+//         ],
+//       }
+//     : null;
+//   const yongSinCandidates = !dayMasterStrength
+//     ? null
+//     : {
+//         method: 'strength_balance_candidates' as const,
+//         status:
+//           level === 'medium'
+//             ? ('requires_additional_method' as const)
+//             : ('candidates' as const),
+//         elements:
+//           level === 'medium'
+//             ? []
+//             : level === 'strong' || level === 'very_strong'
+//               ? [GENERATES[dayElement], CONTROLS[dayElement]]
+//               : [RESOURCE[dayElement], dayElement],
+//         // A deficient element alone does not establish a useful element.
+//         established: false as const,
+//         evidenceIds: dayMasterStrength.evidenceIds,
+//       };
+//   const monthHidden = derived.hiddenStemFacts.filter(
+//     ({ position }) => position === 'month',
+//   );
+//   const monthPrincipal = monthHidden.find(({ isPrincipal }) => isPrincipal);
+//   const monthExposures = monthHidden.flatMap((hidden) =>
+//     pillars
+//       .filter(
+//         ({ position, pillar }) =>
+//           position !== 'day' && pillar.stem.korean === hidden.stemKorean,
+//       )
+//       .map(({ position }) => ({
+//         tenGodKorean: hidden.tenGodKorean,
+//         evidenceIds: [hidden.id, `${participantKey}.${position}.stem`],
+//       })),
+//   );
+// 
+//   // Membership observations are prepared on the server, not rediscovered by AI.
+//   // Hidden occurrences complement the observations but do not inflate counts.
+//   const memberships = (...gods: TenGod[]) => [
+//     ...evidenceFor(...gods),
+//     ...derived.hiddenStemFacts
+//       .filter(({ tenGodKorean }) =>
+//         gods.some((god) => TEN_GOD_NAMES[god] === tenGodKorean),
+//       )
+//       .map(({ id }) => id),
+//   ];
+//   const wealth = memberships('jeong_jae', 'pyeon_jae');
+//   const output = memberships('sik_sin', 'sang_gwan');
+//   const peers = memberships('bi_gyeon', 'geop_jae');
+//   const resources = memberships('jeong_in', 'pyeon_in');
+//   const wealthSignals = [
+//     {
+//       code: 'steady_management',
+//       labelKorean: '정재의 관리·축적 성향',
+//       groups: [memberships('jeong_jae')],
+//       action: '수입과 지출을 주기적으로 기록하기',
+//     },
+//     {
+//       code: 'opportunity_management',
+//       labelKorean: '편재의 기회 활용 성향',
+//       groups: [memberships('pyeon_jae')],
+//       action: '새로운 일의 비용과 조건을 먼저 확인하기',
+//     },
+//     {
+//       code: 'output_wealth_coexistence',
+//       labelKorean: '식상과 재성의 공존',
+//       groups: [output, wealth],
+//       action: '기술과 결과물을 수입 활동으로 연결할 방법을 구체화하기',
+//     },
+//     {
+//       code: 'peer_wealth_coexistence',
+//       labelKorean: '비겁과 재성의 공존',
+//       groups: [peers, wealth],
+//       action: '협업의 역할과 비용 분담을 미리 정하기',
+//     },
+//     {
+//       code: 'resource_output_coexistence',
+//       labelKorean: '인성과 식상의 공존',
+//       groups: [resources, output],
+//       action: '배운 내용을 실제 결과물로 완성하는 습관 들이기',
+//     },
+//   ]
+//     .filter(({ groups }) => groups.every((group) => group.length > 0))
+//     .map(({ code, labelKorean, groups, action }) => ({
+//       code,
+//       labelKorean,
+//       evidenceGroups: groups,
+//       practicalFocus: action,
+//       establishedOutcome: false as const,
+//     }));
+// 
+//   return {
+//     source: 'fortuneteller' as const,
+//     policyVersion: FORTUNETELLER_ANALYSIS_VERSION,
+//     implementation: 'reviewed_rules_on_saved_snapshot' as const,
+//     status: hasHour ? ('complete' as const) : ('partial' as const),
+//     tenGodDistribution: {
+//       method:
+//         'exposed_stems_and_branch_principals_excluding_day_master' as const,
+//       total: occurrences.length,
+//       counts,
+//       evidenceIds: occurrences.map(({ id }) => id),
+//     },
+//     monthSupport: {
+//       relationship: monthRelationship,
+//       isSupporting:
+//         monthRelationship === 'same_element' ||
+//         monthRelationship === 'generates_day_master',
+//       evidenceIds: [
+//         `${participantKey}.day.stem`,
+//         `${participantKey}.month.branch`,
+//       ],
+//     },
+//     dayMasterStrength,
+//     yongSinCandidates,
+//     monthPattern: {
+//       principalTenGodKorean: monthPrincipal?.tenGodKorean ?? null,
+//       principalEvidenceId: monthPrincipal?.id ?? null,
+//       exposedHiddenStems: monthExposures,
+//       establishedGyeokGuk: false as const,
+//     },
+//     wealthSignals,
+//     limitations: [
+//       'interpretation_policy_not_astronomical_fact',
+//       'strength_score_is_not_wealth_score',
+//       'no_hidden_stem_seasonal_weights',
+//       'no_established_gyeokguk_or_yongsin',
+//       'no_time_period_prediction',
+//       ...(!hasHour ? ['strength_and_yongsin_withheld_unknown_hour'] : []),
+//     ],
+//   };
+// }

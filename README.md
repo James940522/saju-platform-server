@@ -23,11 +23,14 @@ npm run start:dev
 
 기본 로컬 주소는 `http://localhost:8080`이다.
 
+재물 분석은 저장소에 고정한 [fortuneteller 로컬 npm 패키지](./vendor/fortuneteller/UPSTREAM.md)를 사용한다. `npm run build`가 vendor도 컴파일하며 운영 이미지에는 `vendor/fortuneteller`와 그 `dist`를 함께 포함해야 한다. [전체·부분 분석 흐름](./docs/fortuneteller-analysis.md)을 참고한다.
+
 ## Environment Variables
 
 | Name | Default | Description |
 | --- | --- | --- |
 | `NODE_ENV` | `development` | 실행 환경 |
+| `LOG_LEVEL` | 개발 `debug`, 운영 `info` | `debug`, `info`, `warn`, `error`. 운영은 JSON 로그, 개발은 단계별 로그 |
 | `PORT` | `8080` | HTTP server port |
 | `CORS_ORIGINS` | `http://localhost:3000` | 쉼표로 구분한 허용 frontend origin |
 | `DATABASE_URL` | - | 애플리케이션 runtime용 Supabase PostgreSQL pooled URL |
@@ -39,9 +42,13 @@ npm run start:dev
 | `KAKAO_ADMIN_KEY` | - | 탈퇴 활성화 시 필수. 로그인에 사용하는 카카오 앱의 어드민 키 |
 | `KIE_API_KEY` | - | 서버 루트 `.env`에서 직접 입력하는 AI Provider 인증키. 재물운 랭킹 활성화 시 필수 |
 | `WEALTH_RANKING_ENABLED` | `false` | 재물운 랭킹 활성화 |
-| `WEALTH_RANKING_TIMEOUT_MS` | `30000` | AI 요청 제한 시간(ms) |
+| `WEALTH_RANKING_TIMEOUT_MS` | `300000` | AI 요청 제한 시간(ms). 기본/최대 300초. 작업 전체 예산은 300초 |
 
 `DIRECT_URL`은 migration에만 사용하고, 실행 중인 API는 connection pooler가 적용된 `DATABASE_URL`을 사용한다. 실제 credential과 key는 `.env`에만 두고 commit하지 않는다.
+
+요청 ID로 HTTP 요청, 공공 API 대조, AI 생성·검증 단계를 연결한다. 요청·응답 원문과 개인정보는 기록하지 않는다. 로그 설정과 재물운 502 수정 내용은 [연결 및 진단 문서](./docs/wealth-ranking-kasi.md#요청과-처리-단계-로그)를 참고한다.
+
+프롬프트는 `src/config/reading-prompts.config.ts`의 상품 키로 관리한다. 재물운은 `readingPrompts['wealth-ranking']`이며, [편집 위치·5분 시간 예산·실제 호출 결과](./docs/wealth-ranking-prompt-v8.md)를 참고한다.
 
 API 인증키는 서버 루트 `.env`에서 직접 관리한다. `KIE_API_KEY`를 입력하고
 `WEALTH_RANKING_ENABLED=true`로 변경한 뒤 서버를 재시작하면 적용된다.
@@ -118,3 +125,9 @@ npm run build
 구현 규칙과 repository 경계는 `AGENTS.md`를 따른다.
 
 만세력·KASI 공식 달력·명리 보조 자료의 조합과 키 설정은 [사주 풀이 데이터 조합 문서](./docs/saju-reading-data-combination.md)를 참고한다. KASI는 기본 비활성화이며 승인된 키 등록 후 활성화한다.
+
+재물운의 음양력·절기 대조, 서버 분석 근거, 환경변수와 실제 연결 확인은 [KASI 재물운 연결](./docs/wealth-ranking-kasi.md)을 참고하세요.
+
+## 백그라운드 풀이
+
+새 풀이 요청은 로그인 후 `POST /v1/reading-jobs`로 접수합니다. 기존/신규 결과는 같은 UUID로 `GET /v1/reading-results/{jobId}`에서 로그인 없이 조회하며 이름·순위·운세·비교 설명만 공개합니다. 내 풀이 목록과 소유자 상세 API는 인증을 유지합니다. 실행·마이그레이션·복구 정책은 [reading-jobs.md](docs/reading-jobs.md)를 참고하세요.

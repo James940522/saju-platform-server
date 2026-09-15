@@ -1,14 +1,12 @@
 import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import { isValidSolarDate } from 'manseryeok';
 import { z } from 'zod';
+import { KASI_API_CONFIG } from '../../../config/kasi-api.config.js';
+import { fetchKasiXml } from './kasi-xml.js';
 import type { EnvironmentVariables } from '../../../config/environment.schema.js';
 import type { SajuChartSnapshotV1 } from '../../saju-profiles/index.js';
 
-const KASI_URL =
-  'https://apis.data.go.kr/B090041/openapi/service/LrsrCldInfoService/getLunCalInfo';
-const MAX_RESPONSE_BYTES = 65_536;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_CACHED_MONTHS = 256;
 const integerText = (min: number, max: number) =>
@@ -38,16 +36,7 @@ const CalendarResponseSchema = z.object({
 type CalendarItem = z.output<typeof CalendarItemSchema>;
 export type CalendarVerificationStatus = 'matched' | 'disabled' | 'unavailable';
 
-function parseMonth(xml: string, year: number, month: number): CalendarItem[] {
-  // No DTDs, custom entities, recovery parsing, or provider text in model prompts.
-  if (/<!DOCTYPE|<!ENTITY/i.test(xml) || XMLValidator.validate(xml) !== true)
-    throw new Error('Invalid calendar XML');
-  const raw: unknown = new XMLParser({
-    ignoreAttributes: true,
-    parseTagValue: false,
-    processEntities: false,
-    isArray: (_name, path) => path === 'response.body.items.item',
-  }).parse(xml);
+function parseMonth(raw: unknown, year: number, month: number): CalendarItem[] {
   const { body } = CalendarResponseSchema.parse(raw).response;
   const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
   if (
@@ -81,6 +70,7 @@ export class KasiCalendarProvider {
 
   async verify(
     snapshot: SajuChartSnapshotV1,
+    requestId?: string,
   ): Promise<CalendarVerificationStatus> {
     if (!this.config.get('KASI_CALENDAR_VERIFICATION_ENABLED', { infer: true }))
       return 'disabled';
@@ -89,7 +79,12 @@ export class KasiCalendarProvider {
     const { solarDate, lunarDate } = snapshot.normalizedBirth;
     let items: CalendarItem[];
     try {
-      items = await this.getMonth(solarDate.year, solarDate.month, key);
+      items = await this.getMonth(
+        solarDate.year,
+        solarDate.month,
+        key,
+        requestId,
+      );
     } catch {
       // Optional reference failure must not masquerade as a successful verification.
       // Do not log the URL, key, birth month, raw XML or upstream exception.
@@ -116,6 +111,7 @@ export class KasiCalendarProvider {
     year: number,
     month: number,
     key: string,
+    requestId?: string,
   ): Promise<CalendarItem[]> {
     const cacheKey = `${year}-${month}`;
     const cached = this.cache.get(cacheKey);
@@ -123,7 +119,7 @@ export class KasiCalendarProvider {
     this.cache.delete(cacheKey);
     const pending = this.pending.get(cacheKey);
     if (pending) return pending;
-    const operation = this.fetchMonth(year, month, key);
+    const operation = this.fetchMonth(year, month, key, requestId);
     this.pending.set(cacheKey, operation);
     try {
       const items = await operation;
@@ -142,8 +138,9 @@ export class KasiCalendarProvider {
     year: number,
     month: number,
     key: string,
+    requestId?: string,
   ): Promise<CalendarItem[]> {
-    const url = new URL(KASI_URL);
+    const url = new URL(KASI_API_CONFIG.lunarCalendar);
     // Retrieve a whole public calendar month: no name, day, time, account or chart ID.
     url.search = new URLSearchParams({
       ServiceKey: key,
@@ -152,33 +149,11 @@ export class KasiCalendarProvider {
       numOfRows: '31',
       pageNo: '1',
     }).toString();
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(
-        this.config.get('KASI_TIMEOUT_MS', { infer: true }),
-      ),
-      redirect: 'error',
-      headers: { Accept: 'application/xml' },
-    });
-    if (!response.ok || !response.body) {
-      await response.body?.cancel();
-      throw new Error('Calendar provider unavailable');
-    }
-    const reader = response.body.getReader();
-    const chunks: Uint8Array[] = [];
-    let size = 0;
-    try {
-      while (true) {
-        const chunk = await reader.read();
-        if (chunk.done) break;
-        size += chunk.value.byteLength;
-        if (size > MAX_RESPONSE_BYTES)
-          throw new Error('Calendar response too large');
-        chunks.push(chunk.value);
-      }
-    } finally {
-      await reader.cancel();
-      reader.releaseLock();
-    }
-    return parseMonth(Buffer.concat(chunks).toString('utf8'), year, month);
+    const raw = await fetchKasiXml(
+      url,
+      this.config.get('KASI_TIMEOUT_MS', { infer: true }),
+      requestId,
+    );
+    return parseMonth(raw, year, month);
   }
 }

@@ -1,0 +1,160 @@
+// Archived 2026-09-14: disabled server reference implementation.
+// Original lines follow, each prefixed with // .
+// import { wealthCharts } from '../../../test/fixtures/wealth-ranking.fixture.js';
+// import { analyzeFortunetellerReference } from './fortuneteller-analysis.js';
+// import { buildSajuReadingFacts } from './saju-reading-facts.js';
+// import { buildWealthRankingContext } from './wealth-ranking-context.js';
+// import { buildWealthRankingMessages } from './infrastructure/wealth-ranking.prompt.js';
+// 
+// describe('Fortuneteller reference analysis on the saved chart', () => {
+//   it('passes all three sources and completed analysis in the actual model message', () => {
+//     const charts = wealthCharts();
+//     const context = buildWealthRankingContext(
+//       charts,
+//       new Map(charts.map(({ chartId }) => [chartId, 'matched' as const])),
+//     );
+//     const payload = buildWealthRankingMessages(context)[1]!.content;
+//     expect(payload).toContain('fortuneteller-reference-v1');
+//     expect(payload).toContain('manseryeok');
+//     expect(payload).toContain('calendarVerification');
+//     expect(payload).toContain('monthSupport');
+//     expect(payload).toContain('yongSinCandidates');
+//     expect(payload).toContain('wealthSignals');
+//     expect(payload).not.toMatch(/normalizedBirth|displayName|luckCycleGender/);
+//     for (const chart of charts) {
+//       expect(payload).not.toContain(chart.chartId);
+//       expect(payload).not.toContain(chart.displayName);
+//     }
+//   });
+// 
+//   it('counts seven observations once, excluding only the day master itself', () => {
+//     const chart = wealthCharts()[0]!;
+//     // Isolate the same-stem counting regression in the reference implementation.
+//     chart.snapshot.pillars.year.stem = structuredClone(
+//       chart.snapshot.pillars.day.stem,
+//     );
+//     chart.snapshot.pillars.year.tenGods.stem = 'bi_gyeon';
+//     const before = structuredClone(chart.snapshot);
+//     const analysis = analyzeFortunetellerReference(
+//       chart.snapshot,
+//       'p1',
+//       buildSajuReadingFacts(chart.snapshot, 'p1'),
+//     );
+//     expect(analysis.tenGodDistribution.total).toBe(7);
+//     expect(
+//       Object.values(analysis.tenGodDistribution.counts).reduce(
+//         (sum, n) => sum + n,
+//         0,
+//       ),
+//     ).toBe(7);
+//     expect(analysis.tenGodDistribution.counts.bi_gyeon).toBeGreaterThanOrEqual(
+//       1,
+//     );
+//     expect(analysis.tenGodDistribution.evidenceIds).toContain('p1.year.stem');
+//     expect(analysis.tenGodDistribution.evidenceIds).not.toContain(
+//       'p1.day.stem',
+//     );
+//     expect(chart.snapshot).toEqual(before);
+//   });
+// 
+//   it.each([
+//     // Policy fixtures isolate the strength formula; they are not calendar oracles.
+//     ['earth', 5, 'very_weak', ['metal', 'water']],
+//     ['metal', 45, 'medium', []],
+//     ['water', 65, 'strong', ['wood', 'fire']],
+//   ] as const)(
+//     'calculates the documented %s month policy before AI',
+//     (monthElement, score, level, elements) => {
+//       const chart = wealthCharts()[0]!;
+//       expect(chart.snapshot.dayMaster.element).toBe('water');
+//       chart.snapshot.pillars.month.branch.element = monthElement;
+//       for (const [position, pillar] of Object.entries(chart.snapshot.pillars)) {
+//         if (!pillar) continue;
+//         pillar.tenGods.branch = 'jeong_jae';
+//         pillar.tenGods.stem = position === 'day' ? 'day_master' : 'jeong_jae';
+//       }
+//       const analysis = analyzeFortunetellerReference(
+//         chart.snapshot,
+//         'p1',
+//         buildSajuReadingFacts(chart.snapshot, 'p1'),
+//       );
+//       expect(analysis.dayMasterStrength).toMatchObject({
+//         heuristicScore: score,
+//         level,
+//       });
+//       expect(analysis.yongSinCandidates).toMatchObject({
+//         elements,
+//         established: false,
+//       });
+//       expect(analysis).not.toHaveProperty('wealthScore');
+//     },
+//   );
+// 
+//   it('withholds strength and yongsin for missing time without inventing an hour', () => {
+//     const analysis =
+//       buildWealthRankingContext(wealthCharts())[1]!.fortuneTellerAnalysis;
+//     expect(analysis.status).toBe('partial');
+//     expect(analysis.dayMasterStrength).toBeNull();
+//     expect(analysis.yongSinCandidates).toBeNull();
+//     expect(analysis.tenGodDistribution.total).toBe(5);
+//     expect(JSON.stringify(analysis)).not.toContain('p2.hour');
+//     expect(analysis.monthPattern.establishedGyeokGuk).toBe(false);
+//   });
+// 
+//   it('grounds observations in their own natal/hidden facts, with every coexistence group populated', () => {
+//     for (const participant of buildWealthRankingContext(wealthCharts())) {
+//       const ids = new Set(
+//         [...participant.facts, ...participant.hiddenStemFacts].map(
+//           ({ id }) => id,
+//         ),
+//       );
+//       const analysis = participant.fortuneTellerAnalysis;
+//       const references = [
+//         ...analysis.tenGodDistribution.evidenceIds,
+//         ...analysis.monthSupport.evidenceIds,
+//         ...(analysis.dayMasterStrength?.evidenceIds ?? []),
+//         ...(analysis.yongSinCandidates?.evidenceIds ?? []),
+//         ...analysis.monthPattern.exposedHiddenStems.flatMap(
+//           ({ evidenceIds }) => evidenceIds,
+//         ),
+//         ...analysis.wealthSignals.flatMap(({ evidenceGroups }) =>
+//           evidenceGroups.flat(),
+//         ),
+//       ];
+//       for (const id of references) expect(ids.has(id)).toBe(true);
+//       for (const signal of analysis.wealthSignals) {
+//         expect(signal.evidenceGroups.every((group) => group.length > 0)).toBe(
+//           true,
+//         );
+//         expect(signal.establishedOutcome).toBe(false);
+//       }
+//     }
+//   });
+// 
+//   it('does not mistake the day master itself for an exposed month hidden stem', () => {
+//     const chart = wealthCharts()[0]!;
+//     chart.snapshot.dayMaster.korean = '임';
+//     chart.snapshot.pillars.day.stem.korean = '임';
+//     const hidden = buildSajuReadingFacts(chart.snapshot, 'p1');
+//     hidden.hiddenStemFacts = [
+//       {
+//         id: 'p1.month.hidden.test',
+//         position: 'month',
+//         branchKorean: '술',
+//         stemKorean: '임',
+//         elementKorean: '수',
+//         yinYangKorean: '양',
+//         tenGodKorean: '비견',
+//         isPrincipal: true,
+//       },
+//     ];
+//     for (const position of ['year', 'month', 'hour'] as const) {
+//       const pillar = chart.snapshot.pillars[position];
+//       if (pillar) pillar.stem.korean = '갑';
+//     }
+//     expect(
+//       analyzeFortunetellerReference(chart.snapshot, 'p1', hidden).monthPattern
+//         .exposedHiddenStems,
+//     ).toEqual([]);
+//   });
+// });

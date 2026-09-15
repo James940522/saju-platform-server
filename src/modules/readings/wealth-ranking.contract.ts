@@ -32,6 +32,22 @@ export const WealthRankingRationaleSchema = z
   .max(600)
   .regex(/^[^\r\n\u2028\u2029<>`#*]+$/u);
 
+export const WealthComparisonTitleSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(60)
+  .regex(/^[^\r\n\u2028\u2029<>`#*{}]+$/u)
+  .refine(
+    (value) =>
+      !/\bp[1-5]\b|\d+\s*위|꼴찌|최하위|랭킹 산출 근거|이렇게 비교했어요/u.test(
+        value,
+      ),
+    {
+      message: '비교 내용에 맞는 제목을 사용해주세요.',
+    },
+  );
+
 export const WealthRankingDataSchema = z
   .strictObject({
     productCode: z.literal('wealth-ranking'),
@@ -52,6 +68,8 @@ export const WealthRankingDataSchema = z
       .min(MIN_WEALTH_PARTICIPANTS)
       .max(MAX_WEALTH_PARTICIPANTS),
     rationale: WealthRankingRationaleSchema,
+    // Historical results have no AI title; keep them readable without regeneration.
+    comparisonTitle: WealthComparisonTitleSchema.optional(),
     notice: z.string().min(1),
   })
   .superRefine(({ ranking }, context) => {

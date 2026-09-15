@@ -94,6 +94,7 @@ function fixture(
       create: vi.fn().mockResolvedValue(chart),
       upsert: vi.fn().mockResolvedValue(chart),
     },
+    readingJob: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
     sajuProfileCreation: {
       findUnique: vi.fn().mockResolvedValue(null),
       create: vi.fn(),

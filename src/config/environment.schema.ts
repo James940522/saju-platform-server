@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { WEALTH_RANKING_AI_TIMEOUT_MS } from './wealth-ranking-runtime.config.js';
 
 const KasiServiceKeySchema = z.preprocess(
   (value) =>
@@ -29,6 +30,7 @@ export const EnvironmentSchema = z
     NODE_ENV: z
       .enum(['development', 'test', 'production'])
       .default('development'),
+    LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).optional(),
     PORT: z.coerce.number().int().min(1).max(65_535).default(8080),
     CORS_ORIGINS: z
       .string()
@@ -54,6 +56,10 @@ export const EnvironmentSchema = z
       .enum(['true', 'false'])
       .default('false')
       .transform((value) => value === 'true'),
+    READING_JOBS_WORKER_ENABLED: z
+      .enum(['true', 'false'])
+      .default('true')
+      .transform((value) => value === 'true'),
     KIE_API_KEY: z.preprocess(
       (value) =>
         typeof value === 'string' && value.trim() === '' ? undefined : value,
@@ -63,16 +69,31 @@ export const EnvironmentSchema = z
       .number()
       .int()
       .min(1000)
-      .max(60_000)
-      .default(30_000),
+      .max(WEALTH_RANKING_AI_TIMEOUT_MS)
+      .default(WEALTH_RANKING_AI_TIMEOUT_MS),
     KASI_CALENDAR_VERIFICATION_ENABLED: z
       .enum(['true', 'false'])
       .default('false')
       .transform((value) => value === 'true'),
     KASI_SERVICE_KEY: KasiServiceKeySchema,
+    KASI_SPECIAL_SERVICE_KEY: KasiServiceKeySchema,
+    KASI_SOLAR_TERMS_VERIFICATION_ENABLED: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
     KASI_TIMEOUT_MS: z.coerce.number().int().min(500).max(3000).default(2000),
   })
   .superRefine((environment, context) => {
+    if (
+      environment.KASI_SOLAR_TERMS_VERIFICATION_ENABLED &&
+      !environment.KASI_SPECIAL_SERVICE_KEY
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['KASI_SPECIAL_SERVICE_KEY'],
+        message: 'Required when KASI solar term verification is enabled',
+      });
+    }
     if (
       environment.KASI_CALENDAR_VERIFICATION_ENABLED &&
       !environment.KASI_SERVICE_KEY

@@ -1,6 +1,13 @@
 import type { SajuChartSnapshotV1 } from '../saju-profiles/index.js';
 import type { CalendarVerificationStatus } from './infrastructure/kasi-calendar.provider.js';
-import { buildSajuReadingFacts } from './saju-reading-facts.js';
+import { analyzeFortuneteller } from './infrastructure/fortuneteller-analysis.adapter.js';
+// Previous local rules are commented out in archive/readings-reference-v1.
+// import { analyzeFortunetellerReference } from './fortuneteller-analysis.js';
+// import { analyzeWealthTraits } from './wealth-ranking-analysis.js';
+import {
+  solarTermVerification,
+  type SolarTermVerification,
+} from './saju-solar-term-verification.js';
 
 export type WealthRankingChart = {
   chartId: string;
@@ -13,6 +20,10 @@ export function buildWealthRankingContext(
   calendarVerifications: ReadonlyMap<
     string,
     CalendarVerificationStatus
+  > = new Map(),
+  solarTermVerifications: ReadonlyMap<
+    string,
+    SolarTermVerification
   > = new Map(),
 ) {
   // Input order and names cannot influence the comparison. No birth dates,
@@ -36,12 +47,13 @@ export function buildWealthRankingContext(
           }));
         },
       );
+      const nativeAnalysis = analyzeFortuneteller(snapshot, participantKey);
       return {
         participantKey,
         quality: snapshot.quality,
         dayMaster: snapshot.dayMaster,
         facts,
-        ...buildSajuReadingFacts(snapshot, participantKey),
+        ...nativeAnalysis,
         calculationPolicy: {
           engine: snapshot.calculation.engine,
           engineVersion: snapshot.calculation.engineVersion,
@@ -52,10 +64,11 @@ export function buildWealthRankingContext(
           scope: 'solar_lunar_date_and_leap_month' as const,
           pillarVerification: 'not_performed' as const,
         },
+        solarTermVerification:
+          solarTermVerifications.get(chartId) ??
+          solarTermVerification('disabled'),
         elementDistribution: snapshot.elementDistribution,
         warningCodes: snapshot.warnings.map(({ code }) => code),
-        // These judgments have no implemented server policy; never invent them.
-        judgments: null,
         periodContext: null,
       };
     });

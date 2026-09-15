@@ -1,0 +1,32 @@
+{
+  "name": "@hoshin/saju-mcp-server",
+  "version": "1.2.0-sunnyeo.1",
+  "private": true,
+  "type": "module",
+  "description": "Pinned fortuneteller analysis functions with reviewed partial-chart patches; see UPSTREAM.md",
+  "author": "Hoshin",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hjsh200219/fortuneteller.git"
+  },
+  "main": "./dist/analysis.js",
+  "types": "./dist/analysis.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/analysis.d.ts",
+      "import": "./dist/analysis.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "UPSTREAM.md",
+    "UPSTREAM-README.md",
+    "upstream.json",
+    "patches"
+  ],
+  "engines": {
+    "node": ">=24"
+  }
+}

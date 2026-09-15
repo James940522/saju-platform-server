@@ -31,7 +31,9 @@ export const aiModelConfig = registerAs('aiModels', () =>
       // 3.8 문서에서 JSON Schema 옵션은 확인되지 않아 프롬프트로 JSON을 요청합니다.
       // 출력 schema와 참여자·근거 검증은 어떤 모드에서도 서버가 수행합니다.
       responseFormat: 'prompt_json',
-      reasoningEffort: null,
+      // 원국 계산은 서버에서 끝납니다. 짧은 비교/문장 생성의 지연을 줄이도록
+      // 낮은 추론 강도를 요청합니다. null로 바꾸면 Kie 기본값을 사용합니다.
+      reasoningEffort: 'low',
     },
   }),
 );

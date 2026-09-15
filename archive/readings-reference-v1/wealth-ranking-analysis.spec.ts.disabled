@@ -1,0 +1,51 @@
+// Archived 2026-09-14: disabled server reference implementation.
+// Original lines follow, each prefixed with // .
+// import { wealthCharts } from '../../../test/fixtures/wealth-ranking.fixture.js';
+// import { buildWealthRankingContext } from './wealth-ranking-context.js';
+// 
+// describe('Server wealth trait evidence', () => {
+//   it('uses the element controlled by the day master, not an arbitrary score', () => {
+//     const [context] = buildWealthRankingContext(wealthCharts());
+//     expect(context?.dayMaster.element).toBe('water');
+//     expect(context?.wealthAnalysis.wealthElement).toBe('fire');
+//     expect(context?.wealthAnalysis).not.toHaveProperty('score');
+//   });
+//   it('groups references only to the same participant and preserves separate principal/hidden membership', () => {
+//     for (const participant of buildWealthRankingContext(wealthCharts())) {
+//       const natal = new Map(participant.facts.map((fact) => [fact.id, fact]));
+//       const hidden = new Map(
+//         participant.hiddenStemFacts.map((fact) => [fact.id, fact]),
+//       );
+//       for (const axis of participant.wealthAnalysis.axes) {
+//         for (const id of axis.exposedStemEvidenceIds)
+//           expect(natal.get(id)?.symbol).toBe('stem');
+//         for (const id of axis.branchPrincipalEvidenceIds)
+//           expect(natal.get(id)?.symbol).toBe('branch');
+//         for (const id of axis.hiddenStemEvidenceIds)
+//           expect(hidden.has(id)).toBe(true);
+//         if (axis.code === 'asset_management') {
+//           for (const id of [
+//             ...axis.exposedStemEvidenceIds,
+//             ...axis.branchPrincipalEvidenceIds,
+//           ])
+//             expect(natal.get(id)?.tenGod).toBe('jeong_jae');
+//           for (const id of axis.hiddenStemEvidenceIds)
+//             expect(hidden.get(id)?.tenGodKorean).toBe('정재');
+//         }
+//       }
+//       for (const root of participant.wealthAnalysis.wealthStemRoots) {
+//         const stem = natal.get(root.stemEvidenceId);
+//         expect(['jeong_jae', 'pyeon_jae']).toContain(stem?.tenGod);
+//         for (const id of root.hiddenStemEvidenceIds)
+//           expect(hidden.get(id)?.stemKorean).toBe(stem?.korean);
+//       }
+//     }
+//   });
+//   it('does not invent hour evidence when time is unknown', () => {
+//     const participant = buildWealthRankingContext(wealthCharts())[1]!;
+//     expect(participant.wealthAnalysis.limitations).toContain(
+//       'hour_pillar_unknown',
+//     );
+//     expect(JSON.stringify(participant.wealthAnalysis)).not.toContain('p2.hour');
+//   });
+// });

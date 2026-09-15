@@ -1,0 +1,97 @@
+// Archived 2026-09-14: disabled server reference implementation.
+// Original lines follow, each prefixed with // .
+// import type { SajuChartSnapshotV1 } from '../saju-profiles/index.js';
+// import type { buildSajuReadingFacts } from './saju-reading-facts.js';
+// 
+// const AXES = [
+//   { code: 'asset_management', tenGods: ['jeong_jae'], korean: ['정재'] },
+//   { code: 'opportunity_seeking', tenGods: ['pyeon_jae'], korean: ['편재'] },
+//   {
+//     code: 'earning_skills',
+//     tenGods: ['sik_sin', 'sang_gwan'],
+//     korean: ['식신', '상관'],
+//   },
+//   {
+//     code: 'autonomy_and_competition',
+//     tenGods: ['bi_gyeon', 'geop_jae'],
+//     korean: ['비견', '겁재'],
+//   },
+//   {
+//     code: 'discipline_and_responsibility',
+//     tenGods: ['jeong_gwan', 'pyeon_gwan'],
+//     korean: ['정관', '편관'],
+//   },
+//   {
+//     code: 'learning_and_support',
+//     tenGods: ['jeong_in', 'pyeon_in'],
+//     korean: ['정인', '편인'],
+//   },
+// ];
+// const WEALTH_ELEMENT = {
+//   wood: 'earth',
+//   fire: 'metal',
+//   earth: 'water',
+//   metal: 'wood',
+//   water: 'fire',
+// } as const;
+// 
+// // Observable membership and references, not a fortune score or strength model.
+// // Keep branch principal stems and hidden stems in separate evidence groups.
+// export function analyzeWealthTraits(
+//   snapshot: SajuChartSnapshotV1,
+//   participantKey: string,
+//   hidden: ReturnType<typeof buildSajuReadingFacts>['hiddenStemFacts'],
+// ) {
+//   const pillars = (['year', 'month', 'day', 'hour'] as const).flatMap(
+//     (position) => {
+//       const pillar = snapshot.pillars[position];
+//       return pillar ? [{ position, pillar }] : [];
+//     },
+//   );
+//   return {
+//     policyVersion: 'wealth-traits-v1',
+//     basis: 'natal_tendencies' as const,
+//     wealthElement: WEALTH_ELEMENT[snapshot.dayMaster.element],
+//     monthContext: {
+//       evidenceId: `${participantKey}.month.branch`,
+//       branchKorean: snapshot.pillars.month.branch.korean,
+//       principalTenGod: snapshot.pillars.month.tenGods.branch,
+//     },
+//     axes: AXES.map((axis) => ({
+//       code: axis.code,
+//       exposedStemEvidenceIds: pillars.flatMap(({ position, pillar }) =>
+//         axis.tenGods.includes(pillar.tenGods.stem)
+//           ? [`${participantKey}.${position}.stem`]
+//           : [],
+//       ),
+//       branchPrincipalEvidenceIds: pillars.flatMap(({ position, pillar }) =>
+//         axis.tenGods.includes(pillar.tenGods.branch)
+//           ? [`${participantKey}.${position}.branch`]
+//           : [],
+//       ),
+//       hiddenStemEvidenceIds: hidden
+//         .filter((fact) => axis.korean.includes(fact.tenGodKorean))
+//         .map(({ id }) => id),
+//     })),
+//     // An exposed wealth stem recurring in hidden stems is a membership fact.
+//     // It does not establish useful strength, auspiciousness, or a wealth amount.
+//     wealthStemRoots: pillars.flatMap(({ position, pillar }) => {
+//       if (!['jeong_jae', 'pyeon_jae'].includes(pillar.tenGods.stem)) return [];
+//       return [
+//         {
+//           stemEvidenceId: `${participantKey}.${position}.stem`,
+//           hiddenStemEvidenceIds: hidden
+//             .filter((fact) => fact.stemKorean === pillar.stem.korean)
+//             .map(({ id }) => id),
+//         },
+//       ];
+//     }),
+//     limitations: [
+//       'membership_is_not_strength',
+//       'no_double_counting',
+//       'no_numeric_wealth_score',
+//       'no_time_period_prediction',
+//       ...(!snapshot.pillars.hour ? ['hour_pillar_unknown'] : []),
+//     ],
+//   };
+// }

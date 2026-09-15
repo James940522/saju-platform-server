@@ -1,0 +1,257 @@
+--- a/src/types/index.ts
++++ b/src/types/index.ts
+@@ -53,6 +53,14 @@
+   branchElement: WuXing;
+   yinYang: YinYang;
+ }
++
++// Local integration: absence is explicit; full-chart functions still use SajuData.
++export type PartialSajuData = Omit<SajuData, 'hour' | 'jiJangGan'> & {
++  hour: Pillar | null;
++  jiJangGan?: Omit<NonNullable<SajuData['jiJangGan']>, 'hour'> & {
++    hour?: NonNullable<SajuData['jiJangGan']>['hour'];
++  };
++};
+ 
+ // 사주 사기둥 (Four Pillars)
+ export interface SajuPillars {
+@@ -286,4 +294,3 @@
+ 
+ // 해석 유파 관련 타입
+ export * from './interpretation.js';
+-
+--- a/src/data/earthly_branches.ts
++++ b/src/data/earthly_branches.ts
+@@ -368,7 +368,8 @@
+ 
+   // 지지와 월령의 관계로 세력 결정
+   const branchIndex = EARTHLY_BRANCHES.findIndex((b) => b.korean === branch);
+-  const monthDiff = (monthIndex - branchIndex + 12) % 12;
++  // monthIndex starts at 寅, whereas EARTHLY_BRANCHES starts at 子.
++  const monthDiff = ((monthIndex + 2) - branchIndex + 12) % 12;
+ 
+   let primaryStrength = 70; // 기본 정기 세력
+   let secondaryStrength = 20; // 기본 중기 세력
+@@ -496,4 +497,3 @@
+     strength: 'medium',
+   };
+ }
+-
+--- a/src/lib/ten_gods.ts
++++ b/src/lib/ten_gods.ts
+@@ -3,7 +3,7 @@
+  * 일간(日干)을 기준으로 다른 천간·지지와의 관계를 10가지로 분류
+  */
+ 
+-import type { HeavenlyStem, TenGod, SajuData, TenGodInterpretation } from '../types/index.js';
++import type { HeavenlyStem, TenGod, PartialSajuData, TenGodInterpretation } from '../types/index.js';
+ import { getHeavenlyStemByKorean } from '../data/heavenly_stems.js';
+ import { WUXING_GENERATION, WUXING_DESTRUCTION } from '../data/wuxing.js';
+ 
+@@ -140,7 +140,7 @@
+ /**
+  * 사주 전체의 십성 분포 계산 (지장간 세력 반영)
+  */
+-export function calculateTenGodsDistribution(sajuData: SajuData): Record<TenGod, number> {
++export function calculateTenGodsDistribution(sajuData: PartialSajuData): Record<TenGod, number> {
+   const distribution: Record<TenGod, number> = {
+     비견: 0,
+     겁재: 0,
+@@ -157,14 +157,12 @@
+   const dayStem = sajuData.day.stem;
+ 
+   // 연주, 월주, 시주의 천간 (일주 제외)
+-  const stems = [sajuData.year.stem, sajuData.month.stem, sajuData.hour.stem];
++  const stems = [sajuData.year.stem, sajuData.month.stem, ...(sajuData.hour ? [sajuData.hour.stem] : [])];
+ 
+   stems.forEach((stem) => {
+-    if (stem !== dayStem) {
+-      // 일간과 다른 천간만 계산
+-      const tenGod = calculateTenGod(dayStem, stem);
+-      distribution[tenGod]++;
+-    }
++    // Only the day-master position is excluded; peers elsewhere are evidence.
++    const tenGod = calculateTenGod(dayStem, stem);
++    distribution[tenGod]++;
+   });
+ 
+   // 지장간 세력을 직접 반영
+@@ -172,24 +170,25 @@
+     const pillars = ['year', 'month', 'day', 'hour'] as const;
+ 
+     pillars.forEach((pillar) => {
++      if (pillar === 'hour' && !sajuData.hour) return;
+       const jiJangGan = sajuData.jiJangGan?.[pillar];
+       if (!jiJangGan) return;
+ 
+       // 정기(正氣) - 주 지장간
+-      if (jiJangGan.primary && jiJangGan.primary.stem !== dayStem) {
++      if (jiJangGan.primary) {
+         const tenGod = calculateTenGod(dayStem, jiJangGan.primary.stem);
+         // 세력을 백분율로 변환하여 가중치로 사용 (0-1 범위)
+         distribution[tenGod] += jiJangGan.primary.strength / 100;
+       }
+ 
+       // 중기(中氣) - 보조 지장간
+-      if (jiJangGan.secondary && jiJangGan.secondary.stem !== dayStem) {
++      if (jiJangGan.secondary) {
+         const tenGod = calculateTenGod(dayStem, jiJangGan.secondary.stem);
+         distribution[tenGod] += jiJangGan.secondary.strength / 100;
+       }
+ 
+       // 여기(餘氣) - 잔여 지장간
+-      if (jiJangGan.residual && jiJangGan.residual.stem !== dayStem) {
++      if (jiJangGan.residual) {
+         const tenGod = calculateTenGod(dayStem, jiJangGan.residual.stem);
+         distribution[tenGod] += jiJangGan.residual.strength / 100;
+       }
+@@ -200,12 +199,12 @@
+       sajuData.year.branch,
+       sajuData.month.branch,
+       sajuData.day.branch,
+-      sajuData.hour.branch,
++      ...(sajuData.hour ? [sajuData.hour.branch] : []),
+     ];
+ 
+     branches.forEach((branch) => {
+       const branchStem = mapBranchToStem(branch);
+-      if (branchStem && branchStem !== dayStem) {
++      if (branchStem) {
+         const tenGod = calculateTenGod(dayStem, branchStem);
+         distribution[tenGod] += 0.5;
+       }
+@@ -240,7 +239,7 @@
+ /**
+  * 십성 목록 생성 (사주 8자 각각의 십성)
+  */
+-export function generateTenGodsList(sajuData: SajuData): TenGod[] {
++export function generateTenGodsList(sajuData: PartialSajuData): TenGod[] {
+   const dayStem = sajuData.day.stem;
+   const tenGods: TenGod[] = [];
+ 
+@@ -262,9 +261,9 @@
+   tenGods.push('비견');
+ 
+   // 시주 천간
+-  if (sajuData.hour.stem !== dayStem) {
++  if (sajuData.hour && sajuData.hour.stem !== dayStem) {
+     tenGods.push(calculateTenGod(dayStem, sajuData.hour.stem));
+-  } else {
++  } else if (sajuData.hour) {
+     tenGods.push('비견');
+   }
+ 
+--- a/src/lib/day_master_strength.ts
++++ b/src/lib/day_master_strength.ts
+@@ -45,9 +45,12 @@
+     } else if (bijeopCount >= 2) {
+       score += 15;
+       reasons.push('비겁이 적절함');
+-    } else if (bijeopCount === 1) {
++    } else if (bijeopCount >= 1) {
+       score += 5;
+       reasons.push('비겁이 약간 부족');
++    } else if (bijeopCount > 0) {
++      // Fractional hidden-stem weight is present but below the first bonus tier.
++      reasons.push('비겁이 소량 관찰됨');
+     } else {
+       score -= 10;
+       reasons.push('비겁이 없어 외로움');
+@@ -61,7 +64,7 @@
+     } else if (inseongCount >= 2) {
+       score += 15;
+       reasons.push('인성이 적절히 있음');
+-    } else if (inseongCount === 1) {
++    } else if (inseongCount >= 1) {
+       score += 5;
+       reasons.push('인성이 약간 있음');
+     }
+--- a/src/lib/fortune.ts
++++ b/src/lib/fortune.ts
+@@ -2,7 +2,7 @@
+  * 운세 분석 로직
+  */
+ 
+-import type { SajuData, FortuneAnalysis, FortuneAnalysisType, DailyFortune, WuXing } from '../types/index.js';
++import type { SajuData, PartialSajuData, FortuneAnalysis, FortuneAnalysisType, DailyFortune, WuXing } from '../types/index.js';
+ import { WUXING_DATA, analyzeWuXingBalance } from '../data/wuxing.js';
+ import { interpretAllTenGods } from './ten_gods.js';
+ import { interpretBySinSal } from './sin_sal.js';
+@@ -305,9 +305,9 @@
+ /**
+  * 재물운 분석
+  */
+-function analyzeWealthFortune(
+-  sajuData: SajuData,
+-  balance: ReturnType<typeof analyzeWuXingBalance>
++export function analyzeWealthFortune(
++  sajuData: PartialSajuData,
++  balance: ReturnType<typeof analyzeWuXingBalance> = analyzeWuXingBalance(sajuData.wuxingCount)
+ ): FortuneAnalysis {
+   const positiveParts: string[] = [];
+   const negativeParts: string[] = [];
+@@ -331,7 +331,9 @@
+       '무리한 투자로 위험을 감수하기보다는 꾸준한 저축과 안정적인 재테크를 통해 자산을 축적하는 것이 유리합니다.'
+     );
+   } else {
+-    negativeParts.push('사주 내 재성이 부족하여 재물을 모으는 데 어려움이 있을 수 있습니다.');
++    negativeParts.push(sajuData.hour
++      ? '사주 내 재성이 부족하여 재물을 모으는 데 어려움이 있을 수 있습니다.'
++      : '관찰한 3주에는 재성 오행이 드러나지 않습니다. 시주가 미상이므로 전체 원국의 부재를 뜻하지 않습니다.');
+     adviceParts.push(
+       '불필요한 지출을 줄이고 수입원을 다양화하는 노력이 필요하며, 장기적인 재무 계획을 세우는 것이 중요합니다.'
+     );
+@@ -350,7 +352,9 @@
+         '정기적인 수입원을 확보하고 체계적인 저축 습관을 들이면 탄탄한 재정 기반을 만들 수 있습니다'
+       );
+     } else if (dist.정재 === 0) {
+-      negativeParts.push('정재가 없어 안정적이고 지속적인 수입원을 확보하는 데 어려움이 있을 수 있습니다.');
++      negativeParts.push(sajuData.hour
++        ? '정재가 없어 안정적이고 지속적인 수입원을 확보하는 데 어려움이 있을 수 있습니다.'
++        : '관찰한 3주에서 정재 근거가 확인되지 않았으며, 시주를 포함한 전체 정재 유무는 알 수 없습니다.');
+     }
+ 
+     // 편재: 변동적 재물, 사업수완
+@@ -380,7 +384,9 @@
+     if (dist.비견 + dist.겁재 >= 3) {
+       if (dist.정재 + dist.편재 === 0) {
+         negativeParts.push(
+-          '비겁은 많지만 재성이 없어 재물을 모으기보다는 나누거나 써야 하는 상황이 많을 수 있습니다.'
++          sajuData.hour
++            ? '비겁은 많지만 재성이 없어 재물을 모으기보다는 나누거나 써야 하는 상황이 많을 수 있습니다.'
++            : '관찰한 3주에는 비겁이 있고 재성 근거가 확인되지 않았습니다. 시주에 따라 관계가 달라질 수 있습니다.'
+         );
+         adviceParts.push(
+           '다른 사람과의 협업보다는 독립적인 수입원을 개발하고 자신만의 사업 모델을 만드는 데 집중하는 것이 좋습니다.'
+@@ -401,7 +407,9 @@
+   return {
+     type: 'wealth',
+     score: Math.min(100, score),
+-    summary: wealthCount >= 2 ? '재물운이 좋은 편입니다' : '재물 관리에 신중함이 필요합니다',
++    summary: sajuData.hour
++      ? (wealthCount >= 2 ? '재물운이 좋은 편입니다' : '재물 관리에 신중함이 필요합니다')
++      : '시주를 제외한 3주에서 관찰된 재물 성향의 부분 분석입니다',
+     details: {
+       positive: positiveParts.length > 0 ? [positiveParts.join(' ')] : [],
+       negative: negativeParts.length > 0 ? [negativeParts.join(' ')] : [],
+@@ -712,4 +720,3 @@
+   };
+   return adviceMap[element] || '건강 관리에 신경쓰세요';
+ }
+-
+--- /dev/null
++++ b/src/analysis.ts
+@@ -0,0 +1,13 @@
++// Library entry only: no MCP startup and no birth-date/chart calculation export.
++export { calculateTenGod, calculateTenGodsDistribution, generateTenGodsList } from './lib/ten_gods.js';
++export { extractJiJangGan, calculateJiJangGanStrength, checkWolRyeong, analyzeBranchRelations, SAM_HAP } from './data/earthly_branches.js';
++export { getHeavenlyStemByKorean } from './data/heavenly_stems.js';
++export { analyzeWuXingBalance, getControlledElement } from './data/wuxing.js';
++export { analyzeDayMasterStrength } from './lib/day_master_strength.js';
++export { determineGyeokGuk } from './lib/gyeok_guk.js';
++export { selectYongSin } from './lib/yong_sin.js';
++export { findSinSals } from './lib/sin_sal.js';
++export { analyzeWealthFortune } from './lib/fortune.js';
++export type { SajuData, PartialSajuData, Pillar, HeavenlyStem, EarthlyBranch, TenGod, WuXing, YinYang } from './types/index.js';
++export const FORTUNETELLER_PACKAGE_VERSION = '1.2.0-sunnyeo.1';
++export const FORTUNETELLER_UPSTREAM_REVISION = '1a930ad54c5342b855222e3aa304809b0ed587d5';

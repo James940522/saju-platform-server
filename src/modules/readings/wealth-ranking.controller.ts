@@ -4,10 +4,15 @@ import {
   HttpCode,
   Inject,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { ResponseContract } from '../../common/http/response-contract.decorator.js';
 import { ZodValidationPipe } from '../../common/http/zod-validation.pipe.js';
+import {
+  getRequestId,
+  type RequestWithId,
+} from '../../common/http/request-id.middleware.js';
 import { CurrentAuthPrincipal } from '../auth/current-auth-principal.decorator.js';
 import type { AuthPrincipal } from '../auth/auth-principal.js';
 import { SupabaseAuthGuard } from '../auth/supabase-auth.guard.js';
@@ -34,10 +39,15 @@ export class WealthRankingController {
     schema: WealthRankingDataSchema,
   })
   create(
+    @Req() httpRequest: RequestWithId,
     @CurrentAuthPrincipal() principal: AuthPrincipal,
     @Body(new ZodValidationPipe(CreateWealthRankingRequestSchema))
     request: CreateWealthRankingRequest,
   ) {
-    return this.service.create(principal.subject, request);
+    return this.service.create(
+      principal.subject,
+      request,
+      getRequestId(httpRequest),
+    );
   }
 }

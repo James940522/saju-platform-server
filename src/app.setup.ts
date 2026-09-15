@@ -14,15 +14,23 @@ import {
 } from './common/http/request-id.middleware.js';
 import type { EnvironmentVariables } from './config/environment.schema.js';
 import { setupOpenApi } from './openapi.js';
+import { requestLoggingMiddleware } from './common/http/request-logging.middleware.js';
 
 export function configureApplication(
   app: INestApplication,
   configService: ConfigService<EnvironmentVariables, true>,
 ) {
   app.use(requestIdMiddleware);
+  app.use(requestLoggingMiddleware());
   app.use(helmet());
   app.use(
-    ['/v1/saju-profiles', '/v1/users/me', '/v1/readings'],
+    [
+      '/v1/saju-profiles',
+      '/v1/users/me',
+      '/v1/readings',
+      '/v1/reading-jobs',
+      '/v1/reading-results',
+    ],
     (_request: Request, response: Response, next: NextFunction) => {
       response.setHeader('Cache-Control', 'no-store');
       next();

@@ -8,6 +8,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import { getRequestRoute } from './request-logging.middleware.js';
 import {
   getRequestId,
   REQUEST_ID_HEADER,
@@ -125,7 +126,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
       // Prisma error stacks can contain query arguments (including birth data).
       // Keep the request ID for correlation without logging provider messages.
       this.logger.error(
-        `${request.method} ${request.path} failed (requestId=${requestId}, status=${status})`,
+        `${request.method} ${getRequestRoute(request)} failed (requestId=${requestId}, status=${status})`,
       );
     }
 

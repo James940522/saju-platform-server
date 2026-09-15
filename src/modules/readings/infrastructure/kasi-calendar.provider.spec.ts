@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { solarToLunar } from 'manseryeok';
 import type { EnvironmentVariables } from '../../../config/environment.schema.js';
@@ -28,6 +28,8 @@ describe('KASI optional official calendar adapter', () => {
       }),
     );
   beforeEach(() => {
+    vi.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined);
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     vi.stubGlobal('fetch', fetchMock);
     fetchMock
       .mockReset()
@@ -43,6 +45,35 @@ describe('KASI optional official calendar adapter', () => {
       'disabled',
     );
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('logs a failed KASI request with correlation but without the key, dates, or XML', async () => {
+    const debug = vi
+      .spyOn(Logger.prototype, 'debug')
+      .mockImplementation(() => undefined);
+    const warn = vi
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    fetchMock.mockResolvedValue(
+      new Response('private provider body', { status: 403 }),
+    );
+    expect(
+      await provider().verify(wealthCharts()[0]!.snapshot, 'test-request-123'),
+    ).toBe('unavailable');
+    expect(warn).toHaveBeenCalledWith({
+      event: 'kasi_request_failed',
+      source: 'lunar_calendar',
+      method: 'GET',
+      endpoint:
+        'https://apis.data.go.kr/B090041/openapi/service/LrsrCldInfoService/getLunCalInfo',
+      callId: expect.any(String),
+      requestId: 'test-request-123',
+      stage: 'http_response',
+      httpStatus: 403,
+      durationMs: expect.any(Number),
+    });
+    const logged = JSON.stringify([debug.mock.calls, warn.mock.calls]);
+    expect(logged).not.toMatch(/private|test\+\/=|1992|solYear|ServiceKey|\?/);
   });
   it('requests one month without birth day/time or identity and encodes the key exactly once', async () => {
     const snapshot = wealthCharts()[0]!.snapshot;

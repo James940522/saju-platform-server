@@ -125,7 +125,7 @@ const readingProductInputs = [
     highlights: [
       '참여자별 한 문장 재물운',
       '재물운 순위',
-      '순위를 비교한 근거',
+      '서로 다른 재물 성향 비교',
     ],
   },
   {

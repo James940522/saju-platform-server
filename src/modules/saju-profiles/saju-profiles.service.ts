@@ -509,6 +509,9 @@ export class SajuProfilesService {
         data: { currentChartId: null },
         select: { id: true },
       });
+      await transaction.readingJob.deleteMany({
+        where: { ownerUserId: user.id, participants: { some: { chart: { profileId: profile.id } } } },
+      });
       await transaction.sajuProfile.delete({
         where: { id: profile.id },
         select: { id: true },

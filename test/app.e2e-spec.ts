@@ -1,4 +1,4 @@
-import { type INestApplication } from '@nestjs/common';
+import { Logger, type INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -214,6 +214,50 @@ describe('Application (e2e)', () => {
     const body = ApiErrorResponseSchema.parse(response.body);
 
     expect(body.data?.reason).toBe('AUTHENTICATION_REQUIRED');
+  });
+
+  it('logs request correlation and route templates without input, credentials, or query strings', async () => {
+    const log = vi
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const debug = vi
+      .spyOn(Logger.prototype, 'debug')
+      .mockImplementation(() => undefined);
+    try {
+      const requestId = 'logging-check-12345';
+      await request(app.getHttpServer())
+        .get('/v1/reading-products/private-product?key=private-query')
+        .set('x-request-id', requestId)
+        .set('Authorization', 'Bearer private-token')
+        .set('Cookie', 'session=private-cookie')
+        .expect(404);
+      expect(debug).toHaveBeenCalledWith({
+        event: 'http_request_started',
+        requestId,
+        method: 'GET',
+      });
+      expect(log).toHaveBeenCalledWith({
+        event: 'http_request_finished',
+        requestId,
+        method: 'GET',
+        route: '/v1/reading-products/:productCode',
+        outcome: 'completed',
+        status: 404,
+        durationMs: expect.any(Number),
+      });
+      expect(
+        log.mock.calls.filter(
+          ([item]) =>
+            typeof item === 'object' && item?.event === 'http_request_finished',
+        ),
+      ).toHaveLength(1);
+      expect(JSON.stringify([log.mock.calls, debug.mock.calls])).not.toContain(
+        'private',
+      );
+    } finally {
+      log.mockRestore();
+      debug.mockRestore();
+    }
   });
 
   afterAll(async () => {

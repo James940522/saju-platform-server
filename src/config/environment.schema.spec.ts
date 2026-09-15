@@ -1,10 +1,42 @@
 import { EnvironmentSchema } from './environment.schema.js';
+import { loggingOptions } from './logging.config.js';
 const environment = {
   DATABASE_URL: 'postgresql://test:test@localhost/test',
   DIRECT_URL: 'postgresql://test:test@localhost/test',
   SUPABASE_URL: 'https://example.supabase.co',
   SUPABASE_PUBLISHABLE_KEY: 'test',
 };
+describe('Logging configuration', () => {
+  it('defaults to detailed development logs and production JSON summaries', () => {
+    const development = EnvironmentSchema.parse(environment);
+    expect(loggingOptions(development).logLevels).toContain('debug');
+    expect(loggingOptions(development).json).toBe(false);
+    const production = EnvironmentSchema.parse({
+      ...environment,
+      NODE_ENV: 'production',
+    });
+    expect(loggingOptions(production).logLevels).toContain('log');
+    expect(loggingOptions(production).logLevels).not.toContain('debug');
+    expect(loggingOptions(production).json).toBe(true);
+  });
+  it('accepts an explicit level and rejects invalid configuration', () => {
+    const config = EnvironmentSchema.parse({
+      ...environment,
+      LOG_LEVEL: 'warn',
+    });
+    expect(loggingOptions(config).logLevels).toEqual([
+      'fatal',
+      'error',
+      'warn',
+    ]);
+    expect(
+      EnvironmentSchema.safeParse({
+        ...environment,
+        LOG_LEVEL: 'verbose-secret',
+      }).success,
+    ).toBe(false);
+  });
+});
 describe('Wealth ranking configuration', () => {
   it.each(['', '   '])(
     'allows an empty .env key only while disabled (%j)',
@@ -40,7 +72,19 @@ describe('Wealth ranking configuration', () => {
       }).WEALTH_RANKING_ENABLED,
     ).toBe(true);
   });
-  it.each(['0', '60001', 'invalid'])(
+  it('defaults to and caps AI generation at 300 seconds', () => {
+    expect(EnvironmentSchema.parse(environment).WEALTH_RANKING_TIMEOUT_MS).toBe(
+      300_000,
+    );
+    expect(
+      EnvironmentSchema.parse({
+        ...environment,
+        WEALTH_RANKING_TIMEOUT_MS: '300000',
+      }).WEALTH_RANKING_TIMEOUT_MS,
+    ).toBe(300_000);
+    expect(EnvironmentSchema.parse(environment).KASI_TIMEOUT_MS).toBe(2000);
+  });
+  it.each(['0', '300001', '600000', 'invalid'])(
     'rejects unbounded timeout %s',
     (timeout) => {
       expect(
@@ -73,6 +117,38 @@ describe('Withdrawal configuration', () => {
 });
 
 describe('KASI calendar configuration', () => {
+  it('requires a separate special-service key when solar term verification is enabled', () => {
+    expect(
+      EnvironmentSchema.parse(environment)
+        .KASI_SOLAR_TERMS_VERIFICATION_ENABLED,
+    ).toBe(false);
+    expect(
+      EnvironmentSchema.safeParse({
+        ...environment,
+        KASI_SERVICE_KEY: 'lunar-only',
+        KASI_SOLAR_TERMS_VERIFICATION_ENABLED: 'true',
+      }).success,
+    ).toBe(false);
+    const parsed = EnvironmentSchema.parse({
+      ...environment,
+      KASI_SPECIAL_SERVICE_KEY: 'special%2B%2F%3D',
+      KASI_SOLAR_TERMS_VERIFICATION_ENABLED: 'true',
+    });
+    expect(parsed.KASI_SPECIAL_SERVICE_KEY).toBe('special+/=');
+    expect(parsed.KASI_SERVICE_KEY).toBeUndefined();
+  });
+  it.each([' ', '%20', 'private%key'])(
+    'rejects an unusable enabled special key: %j',
+    (key) => {
+      expect(
+        EnvironmentSchema.safeParse({
+          ...environment,
+          KASI_SPECIAL_SERVICE_KEY: key,
+          KASI_SOLAR_TERMS_VERIFICATION_ENABLED: 'true',
+        }).success,
+      ).toBe(false);
+    },
+  );
   it('rejects an encoded blank key', () => {
     expect(
       EnvironmentSchema.safeParse({ ...environment, KASI_SERVICE_KEY: '%20' })

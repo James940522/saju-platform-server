@@ -67,7 +67,7 @@ try {
   } else {
     stage = 'check applied migration';
     const result = await client.query(
-      "SELECT 1 FROM _prisma_migrations WHERE migration_name = '20260910210000_create_account_withdrawals' AND finished_at IS NOT NULL AND rolled_back_at IS NULL",
+      "SELECT 1 FROM _prisma_migrations WHERE migration_name = '20260914100000_create_reading_jobs' AND finished_at IS NOT NULL AND rolled_back_at IS NULL",
     );
     if (result.rowCount !== 1)
       throw new Error('Required storage migration is not applied.');

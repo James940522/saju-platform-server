@@ -81,6 +81,8 @@ export class AccountWithdrawalService {
             },
             select: { id: true },
           });
+          await tx.readingJob.deleteMany({ where: { ownerUserId: user.id } });
+          await tx.readingRequest.deleteMany({ where: { ownerUserId: user.id } });
           await tx.sajuProfile.updateMany({
             where: { ownerUserId: user.id },
             data: { currentChartId: null },

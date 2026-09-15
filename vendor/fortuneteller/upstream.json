@@ -1,0 +1,21 @@
+{
+  "repository": "https://github.com/hjsh200219/fortuneteller",
+  "revision": "1a930ad54c5342b855222e3aa304809b0ed587d5",
+  "upstreamPackage": "@hoshin/saju-mcp-server",
+  "upstreamVersion": "1.2.0",
+  "licenseDeclaredByUpstream": "MIT",
+  "filesSha256BeforePatch": {
+    "src/types/index.ts": "7a61f8b59395147baf6e430bc67da714a9da79a739fcacd00370918970adaba4",
+    "src/data/earthly_branches.ts": "dc94144f23f54c22e15b20baad90ce72df7fd2957333c450ff430f8a95136d2c",
+    "src/data/heavenly_stems.ts": "38fb3736be55f07568ae1155b1aad8142bc69c227ff8b378963c9b9163694e96",
+    "src/data/wuxing.ts": "df822c82978a24d3222d69cdaa00e00b9122027cfbea2c42936ffe14bb838273",
+    "src/lib/ten_gods.ts": "84de39687ae4ff4a690f123c3ae98dab6f41a28363486c4057d9d62b6d24fe4a",
+    "src/lib/day_master_strength.ts": "9cd93820862f9365707cec1b5c0027a8aab0cbf98784081a55613342ff17ee6b",
+    "src/lib/gyeok_guk.ts": "3255c7da9035d75b2f7527895187ddc0e05a2f4faf3b0f7457ec9e78d2a3b8c2",
+    "src/lib/yong_sin.ts": "4b03259cb646b8e47900dba76ae899b05e7c79ed96cf4614983980aa8c47f736",
+    "src/lib/leap_month_analysis.ts": "873d527988bf9d47d92ede23a1c668c8081242111c6a8762285cce90472786c0",
+    "src/lib/fortune.ts": "ed8155267bcacf5433f9ea5d0bcafbdd8bf9dc5be4ca5fcbc197e571327f055b",
+    "src/lib/sin_sal.ts": "ac02cd13897afc07f08b914b7d5463dcc1c0be0c4203ee8ab2ee304dd27153c4",
+    "src/types/interpretation.ts": "5f0bdb271fd987436329c28b39fb73bd6cee088cf78a65446ee915e0abeb39e5"
+  }
+}

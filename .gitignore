@@ -47,6 +47,7 @@ lerna-debug.log*
 # temp directory
 .temp
 .tmp
+/.local/wealth-ranking-debug/
 
 # Runtime data
 pids
